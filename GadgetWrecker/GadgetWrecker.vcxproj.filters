@@ -11,6 +11,12 @@
     <ClCompile Include="cNasmWrapper.cpp">
       <Filter>Nasm</Filter>
     </ClCompile>
+    <ClCompile Include="cStaticAnalysis.cpp">
+      <Filter>Analysis\Static</Filter>
+    </ClCompile>
+    <ClCompile Include="CapstoneWrapper.cpp">
+      <Filter>Analysis\CapstoneWrapper</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Utilities">
@@ -22,6 +28,18 @@
     <Filter Include="Nasm">
       <UniqueIdentifier>{b87e8838-6ba2-407c-acea-97d8f8ff8788}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Analysis">
+      <UniqueIdentifier>{b545c92e-a061-43bb-8468-8591dbda74d5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Analysis\Dynamic">
+      <UniqueIdentifier>{076a9541-c481-496b-a86a-10d584d7aba2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Analysis\Static">
+      <UniqueIdentifier>{66ddabdd-0ee0-40ff-9ab0-7b98ee115556}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Analysis\CapstoneWrapper">
+      <UniqueIdentifier>{a4dd51de-3e4a-41e7-882f-7a93de23a6f0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cProcess.hpp">
@@ -32,6 +50,12 @@
     </ClInclude>
     <ClInclude Include="cNasmWrapper.hpp">
       <Filter>Nasm</Filter>
+    </ClInclude>
+    <ClInclude Include="cStaticAnalysis.hpp">
+      <Filter>Analysis\Static</Filter>
+    </ClInclude>
+    <ClInclude Include="CapstoneWrapper.hpp">
+      <Filter>Analysis\CapstoneWrapper</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

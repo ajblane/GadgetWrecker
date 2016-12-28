@@ -145,14 +145,18 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\Shared\Utilities\cUtilities.cpp" />
+    <ClCompile Include="CapstoneWrapper.cpp" />
     <ClCompile Include="cNasmWrapper.cpp" />
     <ClCompile Include="cProcess.cpp" />
+    <ClCompile Include="cStaticAnalysis.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Shared\Utilities\cUtilities.hpp" />
+    <ClInclude Include="CapstoneWrapper.hpp" />
     <ClInclude Include="cNasmWrapper.hpp" />
     <ClInclude Include="cProcess.hpp" />
+    <ClInclude Include="cStaticAnalysis.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
