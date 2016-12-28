@@ -15,7 +15,7 @@ private:
 
 public:
 	static std::string ConvertBinToNasmSource(const std::vector<uint8_t>& BinaryData);
-	static std::vector<uint8_t> AssembleASMSource(const std::string& Source);
+	static std::vector<uint8_t> AssembleASMSource(const std::string Path, const std::string& Source);
 };
 
 #endif

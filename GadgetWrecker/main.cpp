@@ -15,8 +15,11 @@
 
 #pragma comment(lib, "capstone.lib")
 
+// To lazy to build capstone myself, solve some lib problems here...
 int (WINAPIV * __vsnprintf)(char *, size_t, const char*, va_list) = _vsnprintf;
 int (WINAPIV* _sprintf)(char*, const char*,...) = sprintf;
+
+std::string NasmPath = "./Dependencies/nasm.exe";
 
 class cReferenceCounter
 {
@@ -295,7 +298,7 @@ void ChangeRetInstruction(std::shared_ptr<cProcessInformation> pProcess, uint64_
 
 			//std::cout << "Assembling: " << CurrentSource << std::endl;
 
-			auto ReplacementData = cNasmWrapper::AssembleASMSource(CurrentSource);
+			auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
 
 			std::cout << "Patching: " << ReplacementData.size() << " bytes at: 0x" << std::hex << PatchedLocation << std::endl;
 			std::cout << "Redirecting function exit to: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
@@ -326,7 +329,13 @@ void ChangeRetInstruction(std::shared_ptr<cProcessInformation> pProcess, uint64_
 void Usage(char* Arg0)
 {
 	std::cout << "Usage: " << Arg0 << std::endl
-		<< Arg0 << " --target <process name> --number <number of returns to patch>" << std::endl; 
+		<< "Required arguments: " << std::endl
+		<< "\t--target <process name> ; the process to open and patch gadgets in" << std::endl
+		<< "\t--number <number> ; The number of gadgets to patch" << std::endl
+		<< "Example: " << std::endl
+		<< Arg0 << " --target <process name> --number <number of returns to patch>" << std::endl
+		<< "Optional arguments: " << std::endl
+		<< "\t --nasm </path/to/nasm> ; defaults to: ./Dependencies/nasm.exe" << std::endl;
 
 	exit(0);
 }
@@ -345,11 +354,15 @@ int main(int argc, char** argv)
 		)
 		Usage(argv[0]);
 
+	
 	std::string Target = Parameters["--target"];
 
+	if (Parameters.find("--nasm") != Parameters.end())
+		NasmPath = Parameters["--nasm"];
+	
 	auto pProcessInfo = cProcess::OpenProcess(cUtilities::StringToWideString(Target));
 
-	std::cout << "Wrecking ROP tools in: " << Target << " [" << pProcessInfo->ProcessId << "]" << std::endl;
+	std::cout << "Wrecking ROP gadgets in: " << Target << " [" << pProcessInfo->ProcessId << "]" << std::endl;
 
 	auto LoadedModules = cProcessInformation::GetProcessModules(pProcessInfo->ProcessId);
 
@@ -402,7 +415,7 @@ int main(int argc, char** argv)
 		}
 		catch (...)
 		{
-			std::cout << "Unhandeled exception" << std::endl;
+			std::cout << "Unhandled exception" << std::endl;
 		}
 	}
 

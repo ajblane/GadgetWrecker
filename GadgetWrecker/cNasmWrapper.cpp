@@ -117,7 +117,7 @@ inline std::string GetTempFile()
 	return Buffer;
 }
 
-std::vector<uint8_t> cNasmWrapper::AssembleASMSource(const std::string & Source)
+std::vector<uint8_t> cNasmWrapper::AssembleASMSource(const std::string Path, const std::string & Source)
 {
 	std::vector<uint8_t> Result;
 
@@ -127,7 +127,7 @@ std::vector<uint8_t> cNasmWrapper::AssembleASMSource(const std::string & Source)
 	if (!WriteFileToDisk(TempSourcePath, std::vector<uint8_t>(Source.begin(), Source.end())))
 		throw std::string("Error: Failed to write source to: ") + TempSourcePath;
 
-	AssembleData(".\\Dependencies\\nasm.exe", TempSourcePath, TempOutputPath);
+	AssembleData(Path, TempSourcePath, TempOutputPath);
 
 	Result = ReadFileFromDisk(TempOutputPath);
 
