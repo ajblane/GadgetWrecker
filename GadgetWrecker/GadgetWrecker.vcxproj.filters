@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="cProcess.cpp">
+      <Filter>Processes</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Shared\Utilities\cUtilities.cpp">
+      <Filter>Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="cNasmWrapper.cpp">
+      <Filter>Nasm</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Utilities">
+      <UniqueIdentifier>{d4c87843-83e3-409d-a60b-9bd7798db5ee}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Processes">
+      <UniqueIdentifier>{e4202e62-49a1-4d42-bb2a-7592f5b0f085}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Nasm">
+      <UniqueIdentifier>{b87e8838-6ba2-407c-acea-97d8f8ff8788}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="cProcess.hpp">
+      <Filter>Processes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\Utilities\cUtilities.hpp">
+      <Filter>Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="cNasmWrapper.hpp">
+      <Filter>Nasm</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
