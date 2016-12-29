@@ -40,7 +40,6 @@ int main(int argc, char** argv)
 		|| Parameters.find("--target") == Parameters.end() || Parameters.find("--number") == Parameters.end()
 		)
 		Usage(argv[0]);
-
 	
 	std::string Target = Parameters["--target"];
 
@@ -71,13 +70,34 @@ int main(int argc, char** argv)
 
 	std::cout << "Found: " << ReturnPointers.size() << " possible gadgets" << std::endl;
 
-	std::cout << "Shuffeling pointers" << std::endl;
+	auto OtherFreeBranches = cFreeBranchReferenceCounter::GetAllFreeBranches();
+
+	if (OtherFreeBranches.size() > 0)
+	{
+		std::cout << "Warning: Found free branch instructions. Patch target will become unstable of which:" << std::endl;
+		
+		size_t RegJumps = 0;
+		size_t StatJumps = 0;
+
+		for (auto x : OtherFreeBranches)
+		{
+			if (x.second <= 3)
+				RegJumps++;
+			else if (x.second >= 4)
+				StatJumps++;
+		}
+
+		std::cout << "\t" << RegJumps << " are of size 3 or less, and are bad" << std::endl;
+		std::cout << "\t" << StatJumps << " are of size 4 or more, and are good" << std::endl;
+	}
+
+	std::cout << "Shuffling pointers" << std::endl;
 
 	std::shuffle(ReturnPointers.begin(), ReturnPointers.end(), std::random_device());
 
 	std::cout << "Suspending process" << std::endl;
 
-	if (pProcessInfo->SuspendProcess())
+	if (pProcessInfo->SuspendProcess() == false)
 		std::cout << "Warning: One or more threads are not suspended, process is not completely suspended" << std::endl;
 
 	std::cout << "Patching: " << Parameters["--number"] << " random pointers" << std::endl;

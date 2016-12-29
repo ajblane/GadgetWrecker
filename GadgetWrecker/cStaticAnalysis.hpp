@@ -23,6 +23,18 @@ public:
 	static std::vector<uint64_t> GetReferenceLocations(uint64_t ReferenceTarget);
 };
 
+class cFreeBranchReferenceCounter
+{
+private:
+	static std::map<uint64_t, uint8_t> _FreeBranches;
+
+public:
+	static void AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength);
+	static bool IsLocationFreeBranch(uint64_t PotentialBranchLocation);
+	static std::map<uint64_t, uint8_t> GetAllFreeBranches();
+
+};
+
 class cSystemMemoryInformation
 {
 public:

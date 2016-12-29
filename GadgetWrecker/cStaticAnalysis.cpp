@@ -134,6 +134,8 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 
 							if (pOperands->type == X86_OP_IMM)
 								cStaticReferenceCounter::AddReference(insn[i].address, pOperands->imm);
+							else
+								cFreeBranchReferenceCounter::AddFreeBranch(insn[i].address, insn[i].size);
 						}
 						else if (detail->groups[x] == X86_GRP_CALL)
 						{
@@ -141,6 +143,8 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 
 							if (pOperands->type == X86_OP_IMM)
 								cStaticReferenceCounter::AddReference(insn[i].address, pOperands->imm);
+							else
+								cFreeBranchReferenceCounter::AddFreeBranch(insn[i].address, insn[i].size);
 						}
 					}
 				}
@@ -150,7 +154,7 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 					if (detail->x86.operands[x].type == X86_OP_MEM)
 					{
 						auto pOperands = detail->x86.operands[x];
-						cStaticReferenceCounter::AddReference(insn[i].address, pOperands.mem.base);
+						cStaticReferenceCounter::AddReference(insn[i].address, pOperands.mem.disp);
 					}
 				}
 			}
@@ -299,3 +303,20 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 
 	return Cleanup();
 }
+
+void cFreeBranchReferenceCounter::AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength)
+{
+	_FreeBranches[BranchLocation] = InstructionLength;
+}
+
+bool cFreeBranchReferenceCounter::IsLocationFreeBranch(uint64_t PotentialBranchLocation)
+{
+	return _FreeBranches.find(PotentialBranchLocation) != _FreeBranches.end();
+}
+
+std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::GetAllFreeBranches()
+{
+	return _FreeBranches;
+}
+
+std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::_FreeBranches;
