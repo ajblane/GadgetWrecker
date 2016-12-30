@@ -221,7 +221,7 @@ bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFour(const std::string
 	// Nasm does not deal with this
 	OperandExpression = cUtilities::ReplaceAll(OperandExpression, "ptr", "");
 
-	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation, RemoteLongLookupTable, OperandExpression);
+	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation + BranchInstruction->size, RemoteLongLookupTable, OperandExpression);
 
 	auto InterdictionBytes = cNasmWrapper::AssembleASMSource(NasmPath, InterdictionStubSource);
 

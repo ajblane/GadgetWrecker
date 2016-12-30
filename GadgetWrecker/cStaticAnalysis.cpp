@@ -206,7 +206,7 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 
 				if (insn[i].id == X86_INS_RET)
 				{
-					Result.push_back(pRemotePointer + i);
+					Result.push_back(insn[i].address);
 				}
 
 				if (detail->groups_count > 0)
@@ -364,7 +364,7 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 		CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
 		CurrentSource = "bits 32\n" + CurrentSource;
 
-		//std::cout << "Assembling: " << CurrentSource << std::endl;
+		std::cout << "Assembling: " << CurrentSource << std::endl;
 
 		auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
 

@@ -82,12 +82,20 @@ int main(int argc, char** argv)
 
 		size_t PreparedInterdictions = 0;
 
+		size_t Counter = 100;
+
+		//std::shuffle(OtherFreeBranches.begin(), OtherFreeBranches.end(), std::random_device());
+
 		for (auto x : OtherFreeBranches)
 		{
+			if (Counter-- == 0)
+				break;
+
 			if (cStaticReferenceCounter::IsReferenced(x.first) == false)
 			{
 				if (cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
 				{
+					std::cout << "Patching: 0x" << std::hex << x.first << std::endl;
 					// TODO: make sure these pointers travel back in time and are fixed before the LongLookup table is written to the remote process.
 					//cRemoteFreeBranchInterdictor::AddToLookupTable(x.first, 0); // Rewriting
 					PreparedInterdictions++;
