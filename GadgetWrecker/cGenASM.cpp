@@ -79,11 +79,11 @@ std::string cGenASMHelper::GenerateInterdictionStub(uint64_t MemoryLocation, uin
 	if (OperandExpression.find("esp") != std::string::npos)
 		throw cUtilities::FormatExceptionString(__FILE__, "OperandExpression.find(\"esp\") != std::string::npos");
 
-	std::string Template
+	std::string Result
 		=
 		R"(
 			bits 32
-			org 0x%x							; arg 0 -> location in memory
+			org )" + std::to_string(MemoryLocation) + R"(						; arg 0 -> location in memory
 			push eax
 			push ecx
 			push ebx	
@@ -93,7 +93,7 @@ std::string cGenASMHelper::GenerateInterdictionStub(uint64_t MemoryLocation, uin
 				dd 0, 0							; 0 is rewritten to 0
 
 PastShortlist: 
-			mov eax, %s							; arg 1 -> OperandExpression
+			mov eax, )" + OperandExpression + R"( ; arg 1 -> OperandExpression
 			xor ecx, ecx			
 			pop ebx
 LoopLocation:
@@ -110,10 +110,10 @@ ShortlistOut:
 			pop	ebx							; esp - 8
 			pop ecx							; esp - c
 			pop eax							; esp - 10
-			push 0x%x						; Template arg 2 -> FromLocation + 4 (ret), act as if we called; esp - c
-			jmp	dword ptr[esp-0xc]			; To rewritten location
+			push )" + std::to_string(FromLocation) + R"( ; Template arg 2 -> FromLocation + 4 (ret), act as if we called; esp - c
+			jmp	dword [esp-0xc]			; To rewritten location
 EndOfShortlist:
-			call 0x%x						; arg 3 -> FunCheckLongList, this function taints eax, ecx and ebx (eax is the result)
+			call )" + std::to_string(FunCheckLongList) + R"(; arg 3 -> FunCheckLongList, this function taints eax, ecx and ebx (eax is the result)
 			; eax -> Rewritten location, will jump here
 			; TODO: append eax to the shortlist for greater performance
 
@@ -122,15 +122,12 @@ ToEaxLocation:
 			pop ebx							; esp - 8
 			pop ecx							; esp - c
 			pop eax							; esp - 10
-			push 0x%x						; Template arg 4 -> FromLocation + 4 (ret), act as if we called; esp - c
-			jmp dword ptr[esp-0xc]			; To original location
+			push )" + std::to_string(FromLocation) + R"( ;Template arg 4 -> FromLocation + 4 (ret), act as if we called; esp - c
+			jmp dword [esp-0xc]			; To original location
 		)";
 
 
-	char Buffer[1024] = {};
-	sprintf(Buffer, Template.c_str(), MemoryLocation, OperandExpression.c_str(), FromLocation, FunCheckLongList, FromLocation);
-
-	return Buffer;
+	return Result;
 }
 
 std::string cGenASMHelper::GenerateLongLookupTableChecker(uint64_t MemoryLocation, std::map<uint64_t, uint64_t> MemoryTranslation)
@@ -153,13 +150,13 @@ std::string cGenASMHelper::GenerateLongLookupTableChecker(uint64_t MemoryLocatio
 PastMemoryTranslationTable:
 			xor ecx, ecx			; ecx -> Will be the index
 			pop ebx					; ebx -> TranslationTable
-
+CompareLoop:
 			cmp dword [ebx+ecx], eax
 			je LongListOut
 			cmp dword [ebx+ecx], 0		
 			je OutNochange							; 0 found, end of the list
 			add ecx, 0x8							; Jump to next entry in longlist
-			jmp PastMemoryTranslationTable
+			jmp CompareLoop
 
 LongListOut:
 			mov eax, dword [ebx+ecx+0x4]		; Move rewritten memory to eax, return			
@@ -231,22 +228,25 @@ bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFour(const std::string
 	if(InterdictionBytes.size() == 0)
 		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() == 0");
 
-	if (InterdictionBytes.size() < StubFunctionReservedSize)
+	if (InterdictionBytes.size() > StubFunctionReservedSize)
 		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() < StubFunctionReservedSize");
 
 	if(pProcess->WriteMemoryInProcess(RemoteStubMemory, InterdictionBytes) == false)
 		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess(RemoteStubMemory, InterdictionBytes) == false");
 
-	std::cout << "Rewriting branch at: 0x" << std::hex << BranchLocation << std::endl;
-	std::cout << "Rewriting branch [" << OperandExpression << "] to: 0x" << std::hex << RemoteStubMemory << std::endl;
-	std::getchar();
+	//std::cout << "Rewriting branch at: 0x" << std::hex << BranchLocation << std::endl;
+	//std::cout << "Rewriting branch [" << OperandExpression << "] to: 0x" << std::hex << RemoteStubMemory << std::endl;
+	//std::getchar();
 	// Proceed to replace old free branch code with fixed jump to interdictor
 
 	std::vector<uint8_t> ReplacementBuffer;
-	ReplacementBuffer.resize(5);				// TODO: patch me for x64, this is x86 only.
+	ReplacementBuffer.resize(5 + (BranchInstruction->size - 5));				// TODO: patch me for x64, this is x86 only.
 
 	ReplacementBuffer[0] = 0xe9;
 	*(uint32_t*)&ReplacementBuffer[1] = ((uint32_t)RemoteStubMemory) - ((uint32_t)BranchLocation) - 5;
+
+	for (size_t i = 5; i < ReplacementBuffer.size(); i++)
+		ReplacementBuffer[i] = 0x90;
 
 	if (pProcess->WriteMemoryInProcess((void*)BranchLocation, ReplacementBuffer) == false)
 		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess(BranchLocation, ReplacementBuffer) == false");
