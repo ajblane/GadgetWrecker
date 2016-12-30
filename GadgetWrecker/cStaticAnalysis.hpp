@@ -54,13 +54,34 @@ public:
 	static uint64_t GetPointer(uint32_t RequestedSize, std::shared_ptr<cProcessInformation> pProcess);
 };
 
+class cDisassembledPage
+{
+private:
+	size_t					_NumberOfInstructions;
+	csh						_CapstoneHandle;
+	cs_insn*				_DisasembledInstructions;
+	std::vector<uint8_t>	_RemotePageMemory;
+	uint64_t				_BasePointer;
+
+public:
+	cDisassembledPage(uint64_t pBasePointer, const std::vector<uint8_t>& Memory);
+	~cDisassembledPage();
+
+	bool	IsInstructionAtAddressAligned(uint64_t Address);
+	cs_insn*	GetInstructionAtAddress(uint64_t Address);
+	size_t		GetNumInstructions();
+	cs_insn*	GetAllInstructions();
+};
+
 class cStaticAnalysis
 {
 private:
 
 public:
+	
+	static cDisassembledPage DisassemblePageAroundPointer(std::shared_ptr<cProcessInformation> pProcess, uint64_t UnalignedPointer);
 	static std::vector<uint64_t> AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule);
-	static void PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer);
+	static uint64_t PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer);
 };
 
 #endif

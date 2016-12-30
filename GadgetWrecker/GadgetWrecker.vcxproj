@@ -146,6 +146,7 @@
   <ItemGroup>
     <ClCompile Include="..\Shared\Utilities\cUtilities.cpp" />
     <ClCompile Include="CapstoneWrapper.cpp" />
+    <ClCompile Include="cGenASM.cpp" />
     <ClCompile Include="cNasmWrapper.cpp" />
     <ClCompile Include="cProcess.cpp" />
     <ClCompile Include="cStaticAnalysis.cpp" />
@@ -154,6 +155,7 @@
   <ItemGroup>
     <ClInclude Include="..\Shared\Utilities\cUtilities.hpp" />
     <ClInclude Include="CapstoneWrapper.hpp" />
+    <ClInclude Include="cGenASM.hpp" />
     <ClInclude Include="cNasmWrapper.hpp" />
     <ClInclude Include="cProcess.hpp" />
     <ClInclude Include="cStaticAnalysis.hpp" />

@@ -17,6 +17,9 @@
     <ClCompile Include="CapstoneWrapper.cpp">
       <Filter>Analysis\CapstoneWrapper</Filter>
     </ClCompile>
+    <ClCompile Include="cGenASM.cpp">
+      <Filter>Analysis\GenASM</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Utilities">
@@ -40,6 +43,9 @@
     <Filter Include="Analysis\CapstoneWrapper">
       <UniqueIdentifier>{a4dd51de-3e4a-41e7-882f-7a93de23a6f0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Analysis\GenASM">
+      <UniqueIdentifier>{29175bb1-158b-41d4-963c-a45a8ce4cbf1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cProcess.hpp">
@@ -56,6 +62,9 @@
     </ClInclude>
     <ClInclude Include="CapstoneWrapper.hpp">
       <Filter>Analysis\CapstoneWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="cGenASM.hpp">
+      <Filter>Analysis\GenASM</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

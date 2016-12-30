@@ -7,6 +7,7 @@
 #include <random>
 
 #include "cProcess.hpp"
+#include "cGenASM.hpp"
 #include "cStaticAnalysis.hpp"
 
 #include "../Shared/Utilities/cUtilities.hpp"
@@ -74,13 +75,25 @@ int main(int argc, char** argv)
 
 	if (OtherFreeBranches.size() > 0)
 	{
-		std::cout << "Warning: Found free branch instructions. Patch target will become unstable of which:" << std::endl;
+		std::cout << "Warning: Patch target will become unstable: Found free branch instructions of which:" << std::endl;
 		
 		size_t RegJumps = 0;
 		size_t StatJumps = 0;
 
+		size_t PreparedInterdictions = 0;
+
 		for (auto x : OtherFreeBranches)
 		{
+			if (cStaticReferenceCounter::IsReferenced(x.first) == false)
+			{
+				if (cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
+				{
+					// TODO: make sure these pointers travel back in time and are fixed before the LongLookup table is written to the remote process.
+					//cRemoteFreeBranchInterdictor::AddToLookupTable(x.first, 0); // Rewriting
+					PreparedInterdictions++;
+				}
+			}
+
 			if (x.second <= 3)
 				RegJumps++;
 			else if (x.second >= 4)
@@ -89,6 +102,8 @@ int main(int argc, char** argv)
 
 		std::cout << "\t" << RegJumps << " are of size 3 or less, and are bad" << std::endl;
 		std::cout << "\t" << StatJumps << " are of size 4 or more, and are good" << std::endl;
+		std::cout << "\t" << PreparedInterdictions << " have been registered for an interdiction" << std::endl;
+		std::cout << "Warning: Freebranch interdiction is is based on a best-effort basis, since it's not possible to rewrite all calls for now" << std::endl;
 	}
 
 	std::cout << "Shuffling pointers" << std::endl;
@@ -110,7 +125,10 @@ int main(int argc, char** argv)
 			break;
 		try
 		{
-			cStaticAnalysis::PatchAlignedRetInstruction(NasmPath, pProcessInfo, pPointer);
+			uint64_t PatchedTo = cStaticAnalysis::PatchAlignedRetInstruction(NasmPath, pProcessInfo, pPointer);
+
+			if(PatchedTo > 0)
+				cRemoteFreeBranchInterdictor::AddToLookupTable(pPointer, PatchedTo);
 		}
 		catch (std::exception e)
 		{
@@ -124,6 +142,25 @@ int main(int argc, char** argv)
 		{
 			std::cout << "Unhandled exception" << std::endl;
 		}
+	}
+
+	std::cout << "Patching free branches" << std::endl;
+
+	try
+	{
+		cRemoteFreeBranchInterdictor::Commit(NasmPath, pProcessInfo);
+	}
+	catch (std::exception e)
+	{
+		std::cout << "Exception: " << e.what() << std::endl;
+	}
+	catch (std::string e)
+	{
+		std::cout << "Exception: " << e << std::endl;
+	}
+	catch (...)
+	{
+		std::cout << "Unhandled exception" << std::endl;
 	}
 
 	std::cout << "Resuming process" << std::endl;

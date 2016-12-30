@@ -79,16 +79,94 @@ uint64_t cRemoteMemoryManager::_CurrentPointer = 0;
 uint64_t cRemoteMemoryManager::_CurrentIndex = 0;
 uint64_t cRemoteMemoryManager::_SizeOfRemoteMemory = 0;
 
+cDisassembledPage::cDisassembledPage(uint64_t pBasePointer, const std::vector<uint8_t>& Memory)
+	: _NumberOfInstructions(0), _CapstoneHandle(0), _DisasembledInstructions(NULL), _BasePointer(pBasePointer)
+{
+	auto CleanException = [&](const std::string& Message)
+	{
+		if (_DisasembledInstructions != NULL && _NumberOfInstructions != 0)
+			cs_free(_DisasembledInstructions, _NumberOfInstructions);
+
+		if (_CapstoneHandle != NULL)
+			cs_close(&_CapstoneHandle);
+
+		_NumberOfInstructions = 0;
+		_DisasembledInstructions = NULL;
+		_CapstoneHandle = NULL;
+
+		throw cUtilities::FormatExceptionString(__FILE__, Message);
+	};
+
+	if (cs_open(CS_ARCH_X86, CS_MODE_32, &_CapstoneHandle) != CS_ERR_OK)
+		CleanException("cs_open(CS_ARCH_X86, CS_MODE_32, &_CapstoneHandle) != CS_ERR_OK");
+
+	cs_option(_CapstoneHandle, CS_OPT_DETAIL, CS_OPT_ON); // turn ON detail feature with CS_OPT_ON
+
+	_NumberOfInstructions = cs_disasm(_CapstoneHandle, Memory.data(), Memory.size(), _BasePointer, 0, &_DisasembledInstructions);
+}
+
+cDisassembledPage::~cDisassembledPage()
+{
+	if (_DisasembledInstructions != NULL && _NumberOfInstructions != 0)
+		cs_free(_DisasembledInstructions, _NumberOfInstructions);
+
+	if (_CapstoneHandle != NULL)
+		cs_close(&_CapstoneHandle);
+
+	_NumberOfInstructions = 0;
+	_DisasembledInstructions = NULL;
+	_CapstoneHandle = NULL;
+}
+
+bool cDisassembledPage::IsInstructionAtAddressAligned(uint64_t Address)
+{
+	for (size_t i = 0; i < _NumberOfInstructions; i++)
+		if (_DisasembledInstructions[i].address == Address)
+			return true;
+		else if (_DisasembledInstructions[i].address > Address)
+			return false;
+
+	return false;
+}
+
+cs_insn* cDisassembledPage::GetInstructionAtAddress(uint64_t Address)
+{
+	cs_insn* pResult = NULL;
+
+	for (size_t i = 0; i < _NumberOfInstructions; i++)
+		if (_DisasembledInstructions[i].address == Address)
+			return &_DisasembledInstructions[i];
+
+	return pResult;
+}
+
+size_t cDisassembledPage::GetNumInstructions()
+{
+	return _NumberOfInstructions;
+}
+
+cs_insn * cDisassembledPage::GetAllInstructions()
+{
+	return _DisasembledInstructions;
+}
+
+cDisassembledPage cStaticAnalysis::DisassemblePageAroundPointer(std::shared_ptr<cProcessInformation> pProcess, uint64_t UnalignedPointer)
+{
+	size_t PageSize = cSystemMemoryInformation::GetPageSize();
+
+	uint64_t PageOffset = (UnalignedPointer % PageSize);
+	uint64_t BasePage = UnalignedPointer - PageOffset;
+
+	auto Memory = pProcess->ReadMemoryInprocess((void*)BasePage, PageSize);
+
+	if (Memory.size() == 0)
+		throw cUtilities::FormatExceptionString(__FILE__, "Memory.size() == 0");
+
+	return cDisassembledPage(BasePage, Memory);
+}
+
 std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule)
 {
-	csh handle;
-	cs_insn *insn;
-
-	if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK)
-		throw cUtilities::FormatExceptionString(__FILE__, "cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)");
-
-	cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON); // turn ON detail feature with CS_OPT_ON
-
 	std::vector<uint64_t> Result;
 
 	auto CurrentPageSize = (uint32_t)cSystemMemoryInformation::GetPageSize();
@@ -102,28 +180,35 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 	{
 		if (cSystemMemoryInformation::IsPageExecutable(pProcess->ProcessHandle->hHandle, pRemotePointer, CurrentPageSize))
 		{
-			auto Memory = pProcess->ReadMemoryInprocess((void*)pRemotePointer, CurrentPageSize);
+			auto PageData = cStaticAnalysis::DisassemblePageAroundPointer(pProcess, pRemotePointer);
 
-			if (Memory.size() == 0)
+			size_t NumberOfInstructions = PageData.GetNumInstructions();
+
+			if (NumberOfInstructions == 0 || NumberOfInstructions == -1)
 				continue;
 
+			/*
 			for (size_t i = 0; i < Memory.size(); i++)
 			{
 				if (Memory[i] == 0xc3)
 				{
+					This woul also count unaligned instructions, we won't deal with those for now.
 					Result.push_back(pRemotePointer + i);
 				}
 			}
+			*/
 
-			size_t NumberOfInstructions = cs_disasm(handle, Memory.data(), Memory.size(), pRemotePointer, 0, &insn);
-
-			if (NumberOfInstructions == -1)
-				continue;
+			cs_insn* insn = PageData.GetAllInstructions();
 
 			for (size_t i = 0; i < NumberOfInstructions; i++)
 			{
-
 				cs_detail *detail = insn[i].detail;
+
+				if (insn[i].id == X86_INS_RET)
+				{
+					Result.push_back(pRemotePointer + i);
+				}
+
 				if (detail->groups_count > 0)
 				{
 					for (size_t x = 0; x < detail->groups_count; x++)
@@ -149,6 +234,7 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 					}
 				}
 
+				/*
 				for (size_t x = 0; x < detail->x86.op_count; x++)
 				{
 					if (detail->x86.operands[x].type == X86_OP_MEM)
@@ -157,19 +243,19 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 						cStaticReferenceCounter::AddReference(insn[i].address, pOperands.mem.disp);
 					}
 				}
+				*/
 			}
-
-			cs_free(insn, NumberOfInstructions);
 		}
 	}
-
-	cs_close(&handle);
 
 	return Result;
 }
 
-void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer)
+uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer)
 {
+	// The new location of the RET instruction
+	uint64_t Result = 0;
+
 	size_t PageSize = cSystemMemoryInformation::GetPageSize();
 
 	uint64_t PageOffset = (pPointer % PageSize);
@@ -199,7 +285,7 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		throw cUtilities::FormatExceptionString(__FILE__, Message);
 	};
 
-	auto Cleanup = [&](void) -> void
+	auto Cleanup = [&](uint64_t aResult) -> uint64_t
 	{
 		if (insn != NULL && NumberOfInstructions != 0)
 			cs_free(insn, NumberOfInstructions);
@@ -210,6 +296,8 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		NumberOfInstructions = 0;
 		insn = NULL;
 		handle = NULL;
+		
+		return aResult;
 	};
 
 	if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK)
@@ -230,7 +318,7 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		if (insn[i].address == pPointer)
 			InstructionOffset = i;
 		else if (insn[i].address > pPointer)
-			return Cleanup();
+			return Cleanup(Result);
 	}
 
 	if (InstructionOffset >= 5)
@@ -258,7 +346,7 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		}
 
 		if (IsReferenced == true)
-			return Cleanup();
+			return Cleanup(Result);
 
 		std::vector<uint8_t> ReplacementBuffer;
 		for (size_t i = 0; i < PatchedSize; i++)
@@ -272,7 +360,6 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		*(uint32_t*)&ReplacementBuffer[1] = (uint32_t)RemoteReplacementPageIndex - PatchedLocation - 5;   // Only for x86 PATCH ME!
 
 		CurrentSource = cUtilities::ReplaceAll(CurrentSource, "ptr", "");
-
 
 		CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
 		CurrentSource = "bits 32\n" + CurrentSource;
@@ -294,6 +381,10 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 			{
 				std::cout << "Failed to write jump to new exitcode at: 0x" << std::hex << PatchedLocation << std::endl;
 			}
+			else
+			{
+				Result = RemoteReplacementPageIndex;
+			}
 		}
 		else
 		{
@@ -301,7 +392,7 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 		}
 	}
 
-	return Cleanup();
+	return Cleanup(Result);
 }
 
 void cFreeBranchReferenceCounter::AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength)
@@ -320,3 +411,4 @@ std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::GetAllFreeBranches()
 }
 
 std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::_FreeBranches;
+
