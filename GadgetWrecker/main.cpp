@@ -82,15 +82,10 @@ int main(int argc, char** argv)
 
 		size_t PreparedInterdictions = 0;
 
-		size_t Counter = 100;
-
 		//std::shuffle(OtherFreeBranches.begin(), OtherFreeBranches.end(), std::random_device());
 
 		for (auto x : OtherFreeBranches)
 		{
-			if (Counter-- == 0)
-				break;
-
 			if (cStaticReferenceCounter::IsReferenced(x.first) == false)
 			{
 				if (cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
@@ -102,14 +97,14 @@ int main(int argc, char** argv)
 				}
 			}
 
-			if (x.second <= 3)
+			if (x.second <= 4)
 				RegJumps++;
-			else if (x.second >= 4)
+			else if (x.second >= 5)
 				StatJumps++;
 		}
 
-		std::cout << "\t" << RegJumps << " are of size 3 or less, and are bad" << std::endl;
-		std::cout << "\t" << StatJumps << " are of size 4 or more, and are good" << std::endl;
+		std::cout << "\t" << RegJumps << " are of size 4 or less, and are bad" << std::endl;
+		std::cout << "\t" << StatJumps << " are of size 5 or more, and are good" << std::endl;
 		std::cout << "\t" << PreparedInterdictions << " have been registered for an interdiction" << std::endl;
 		std::cout << "Warning: Freebranch interdiction is is based on a best-effort basis, since it's not possible to rewrite all calls for now" << std::endl;
 	}

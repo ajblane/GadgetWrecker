@@ -174,7 +174,7 @@ OutNochange:
 	return Buffer;
 }
 
-bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFour(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
+bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFive(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
 {
 	bool Result = true;
 
@@ -258,7 +258,7 @@ bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFour(const std::string
 
 bool cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(uint64_t BranchLocation, uint64_t BranchSize)
 {
-	if (BranchSize <= 3)
+	if (BranchSize <= 4)
 		return false;				// TODO
 	else
 		_PreparedPatches.push_back(cPreparedRemoteBranchPatches(BranchLocation, BranchSize));
@@ -298,7 +298,7 @@ void cRemoteFreeBranchInterdictor::Commit(const std::string& NasmPath, std::shar
 
 	for (auto pBranch : _PreparedPatches)
 	{
-		InterdictFreeBranchSizeFour(NasmPath, pProcess, (uint64_t)RemoteLookupTableMemory, pBranch.BranchLocation);
+		InterdictFreeBranchSizeFive(NasmPath, pProcess, (uint64_t)RemoteLookupTableMemory, pBranch.BranchLocation);
 	}
 
 	_Commited = true;

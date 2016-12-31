@@ -82,7 +82,7 @@ private:
 	static uint64_t _RemoteInterdictedLookupTable;
 	static bool _Commited;
 
-	static bool InterdictFreeBranchSizeFour(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation);
+	static bool InterdictFreeBranchSizeFive(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation);
 
 public:
 	static bool PrepareBranchInterdiction(uint64_t BranchLocation, uint64_t BranchSize);
