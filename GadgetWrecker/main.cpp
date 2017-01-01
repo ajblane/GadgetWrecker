@@ -6,11 +6,15 @@
 #include <algorithm>
 #include <random>
 
+#include <filesystem>
+
 #include "cProcess.hpp"
 #include "cGenASM.hpp"
 #include "cStaticAnalysis.hpp"
 
 #include "../Shared/Utilities/cUtilities.hpp"
+
+bool Useint3hHack = true;
 
 void Usage(char* Arg0)
 {
@@ -21,13 +25,17 @@ void Usage(char* Arg0)
 		<< "Example: " << std::endl
 		<< Arg0 << " --target <process name> --number <number of returns to patch>" << std::endl
 		<< "Optional arguments: " << std::endl
-		<< "\t --nasm </path/to/nasm> ; defaults to: ./Dependencies/nasm.exe" << std::endl;
+		<< "\t --nasm </path/to/nasm> ; defaults to: ./Dependencies/nasm.exe" << std::endl
+		<< "\t --useint3hack <y/n> ; defaults to: y, enables or disables int3 ret backtracking heuristic" << std::endl
+		<< "\t --modules <name01,name02> ; Specify the modules wherein patches are made, defaults to all modules" << std::endl;
 
 	exit(0);
 }
 
 int main(int argc, char** argv)
 {
+	std::vector<std::string> TargetModules;
+
 	std::string NasmPath = "./Dependencies/nasm.exe";
 
 	auto Parameters = cUtilities::ParseArguments(argv, argc);
@@ -46,12 +54,42 @@ int main(int argc, char** argv)
 
 	if (Parameters.find("--nasm") != Parameters.end())
 		NasmPath = Parameters["--nasm"];
+
+	if (Parameters.find("--useint3hack") != Parameters.end())
+		Useint3hHack = Parameters["--useint3hack"] == "y";
+
+	if (Parameters.find("--modules") != Parameters.end())
+		TargetModules = cUtilities::SplitString(Parameters["--modules"], ',');
 	
 	auto pProcessInfo = cProcess::OpenProcess(cUtilities::StringToWideString(Target));
 
 	std::cout << "Wrecking ROP gadgets in: " << Target << " [" << pProcessInfo->ProcessId << "]" << std::endl;
 
-	auto LoadedModules = cProcessInformation::GetProcessModules(pProcessInfo->ProcessId);
+	std::vector<cModuleWrapper> Temp = cProcessInformation::GetProcessModules(pProcessInfo->ProcessId);
+	std::vector<cModuleWrapper> LoadedModules;
+
+	if(TargetModules.size() != 0)
+	{
+		for (auto x : Temp)
+		{
+			std::string ModuleName = cUtilities::WideStringToString(x.ModuleName);
+
+			ModuleName = std::experimental::filesystem::path(ModuleName).filename().string();
+
+			if (std::find(TargetModules.begin(), TargetModules.end(), ModuleName) != TargetModules.end())
+				LoadedModules.push_back(x);
+		}
+	}
+	else
+	{
+		LoadedModules = Temp;
+	}
+
+	if (LoadedModules.size() == 0)
+	{
+		std::cout << "Error: No modules found" << std::endl;
+		return 0;
+	}
 
 	std::cout << "Scanning memory space of: " << LoadedModules.size() << " modules" << std::endl;
 
@@ -90,7 +128,7 @@ int main(int argc, char** argv)
 			{
 				if (cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
 				{
-					std::cout << "Patching: 0x" << std::hex << x.first << std::endl;
+					//std::cout << "Patching: 0x" << std::hex << x.first << std::endl;
 					// TODO: make sure these pointers travel back in time and are fixed before the LongLookup table is written to the remote process.
 					//cRemoteFreeBranchInterdictor::AddToLookupTable(x.first, 0); // Rewriting
 					PreparedInterdictions++;

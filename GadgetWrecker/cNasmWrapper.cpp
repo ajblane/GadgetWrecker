@@ -121,16 +121,17 @@ std::vector<uint8_t> cNasmWrapper::AssembleASMSource(const std::string Path, con
 {
 	std::vector<uint8_t> Result;
 
-	std::string TempSourcePath = GetTempFile() + ".asm";
+	std::string TempSourcePath = GetTempFile();
 	std::string TempOutputPath = GetTempFile();
 
-	if (!WriteFileToDisk(TempSourcePath, std::vector<uint8_t>(Source.begin(), Source.end())))
-		throw std::string("Error: Failed to write source to: ") + TempSourcePath;
+	if (!WriteFileToDisk(TempSourcePath + ".asm", std::vector<uint8_t>(Source.begin(), Source.end())))
+		throw std::string("Error: Failed to write source to: ") + TempSourcePath + ".asm";
 
-	AssembleData(Path, TempSourcePath, TempOutputPath);
+	AssembleData(Path, TempSourcePath + ".asm", TempOutputPath);
 
 	Result = ReadFileFromDisk(TempOutputPath);
 
+	remove((TempSourcePath + ".asm").c_str());
 	remove(TempSourcePath.c_str());
 	remove(TempOutputPath.c_str());
 

@@ -178,26 +178,26 @@ bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFive(const std::string
 {
 	bool Result = true;
 
-	void* RemoteStubMemory = NULL;
+	uint64_t RemoteStubMemory = NULL;
 
 	auto AbortCleanup = [&]() -> bool
 	{
-		if (RemoteStubMemory != NULL)
-			pProcess->FreeMemoryInProcess(RemoteStubMemory);
+	//	if (RemoteStubMemory != NULL)
+	//		pProcess->FreeMemoryInProcess(RemoteStubMemory);
 
-		RemoteStubMemory = NULL;
+	//	RemoteStubMemory = NULL;
 
 		return false;
 	};
 
-	const size_t StubFunctionReservedSize = 0x1000;
+	const size_t StubFunctionReservedSize = 0x60;
 
 	if (_Commited == true)
 		throw cUtilities::FormatExceptionString(__FILE__, "_Commited == true");
 
 	// Create remote free branch interdictor
-
-	RemoteStubMemory = pProcess->AllocateMemoryInProcess(StubFunctionReservedSize);
+	RemoteStubMemory = cRemoteMemoryManager::GetPointer(StubFunctionReservedSize, pProcess);
+	//RemoteStubMemory = pProcess->AllocateMemoryInProcess(StubFunctionReservedSize);
 
 	if(RemoteStubMemory == NULL)
 		throw cUtilities::FormatExceptionString(__FILE__, "RemoteStubMemory == NULL");
@@ -223,15 +223,20 @@ bool cRemoteFreeBranchInterdictor::InterdictFreeBranchSizeFive(const std::string
 
 	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation + BranchInstruction->size, RemoteLongLookupTable, OperandExpression);
 
+	// Size is 0x5b for this release.
 	auto InterdictionBytes = cNasmWrapper::AssembleASMSource(NasmPath, InterdictionStubSource);
 
-	if(InterdictionBytes.size() == 0)
+	if (InterdictionBytes.size() == 0)
+	{
+		std::cout << "Error source: " << InterdictionStubSource << std::endl;
+
 		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() == 0");
+	}
 
 	if (InterdictionBytes.size() > StubFunctionReservedSize)
 		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() < StubFunctionReservedSize");
 
-	if(pProcess->WriteMemoryInProcess(RemoteStubMemory, InterdictionBytes) == false)
+	if(pProcess->WriteMemoryInProcess((void*)RemoteStubMemory, InterdictionBytes) == false)
 		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess(RemoteStubMemory, InterdictionBytes) == false");
 
 	//std::cout << "Rewriting branch at: 0x" << std::hex << BranchLocation << std::endl;

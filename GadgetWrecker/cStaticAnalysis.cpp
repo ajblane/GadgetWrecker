@@ -5,6 +5,8 @@
 
 #include "../shared/Utilities/cUtilities.hpp"
 
+extern bool Useint3hHack;
+
 void cStaticReferenceCounter::AddReference(uint64_t ReferenceLocation, uint64_t ReferenceTarget)
 {
 	if (_ReferenceMap.find(ReferenceTarget) != _ReferenceMap.end())
@@ -334,9 +336,24 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 			//	<< "referenced: " << (cReferenceCounter::IsReferenced(insn[i].address) ? "yes" : "no");
 			//std::getline(std::cin, std::string());
 
+			std::string CurrentLine = insn[i].mnemonic + std::string(" ") + insn[i].op_str + "\n";
+
+			if (Useint3hHack)
+				if (insn[i].id == X86_INS_INT3)
+					continue;
+
 			if (i <= InstructionOffset)
 			{
-				CurrentSource += insn[i].mnemonic + std::string(" ") + insn[i].op_str + "\n";
+				if (CurrentLine.find("lea") != std::string::npos)
+				{
+					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
+					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
+					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
+				}
+
+				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
+
+				CurrentSource += CurrentLine;
 
 				PatchedSize += insn[i].size;
 
@@ -346,6 +363,10 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 		}
 
 		if (IsReferenced == true)
+			return Cleanup(Result);
+
+		// We need at least 5 bytes to place a jump.
+		if(PatchedSize < 5)
 			return Cleanup(Result);
 
 		std::vector<uint8_t> ReplacementBuffer;
@@ -359,12 +380,11 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 		ReplacementBuffer[0] = 0xe9;
 		*(uint32_t*)&ReplacementBuffer[1] = (uint32_t)RemoteReplacementPageIndex - PatchedLocation - 5;   // Only for x86 PATCH ME!
 
-		CurrentSource = cUtilities::ReplaceAll(CurrentSource, "ptr", "");
 
 		CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
 		CurrentSource = "bits 32\n" + CurrentSource;
 
-		std::cout << "Assembling: " << CurrentSource << std::endl;
+		//std::cout << "Assembling: " << CurrentSource << std::endl;
 
 		auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
 
@@ -373,7 +393,10 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 		//	std::getline(std::cin, std::string());
 
 		if (ReplacementData.size() == 0)
+		{
+			std::cout << "Error source: " << CurrentSource << std::endl;
 			CleanException("ReplacementData.size() == 0");
+		}
 
 		if (pProcess->WriteMemoryInProcess((void*)RemoteReplacementPageIndex, ReplacementData))
 		{
