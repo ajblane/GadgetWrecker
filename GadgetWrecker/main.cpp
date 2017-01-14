@@ -18,16 +18,17 @@ bool Useint3hHack = true;
 
 void Usage(char* Arg0)
 {
-	std::cout << "Usage: " << Arg0 << std::endl
+	std::cout 
+		<< "Usage: " << Arg0 << std::endl
 		<< "Required arguments: " << std::endl
 		<< "\t--target <process name> ; the process to open and patch gadgets in" << std::endl
 		<< "\t--number <number> ; The number of gadgets to patch" << std::endl
-		<< "Example: " << std::endl
-		<< Arg0 << " --target <process name> --number <number of returns to patch>" << std::endl
 		<< "Optional arguments: " << std::endl
 		<< "\t --nasm </path/to/nasm> ; defaults to: ./Dependencies/nasm.exe" << std::endl
 		<< "\t --useint3hack <y/n> ; defaults to: y, enables or disables int3 ret backtracking heuristic" << std::endl
-		<< "\t --modules <name01,name02> ; Specify the modules wherein patches are made, defaults to all modules" << std::endl;
+		<< "\t --modules <name01,name02> ; Specify the modules wherein patches are to be made, defaults to all modules" << std::endl
+		<< "Example: " << std::endl << std::endl
+		<< Arg0 << " --target <process name> --number <number of returns to patch>" << std::endl;
 
 	exit(0);
 }
@@ -166,10 +167,14 @@ int main(int argc, char** argv)
 			break;
 		try
 		{
-			uint64_t PatchedTo = cStaticAnalysis::PatchAlignedRetInstruction(NasmPath, pProcessInfo, pPointer);
-
-			if(PatchedTo > 0)
-				cRemoteFreeBranchInterdictor::AddToLookupTable(pPointer, PatchedTo);
+			if (cDirtyRangeMarker::IsPointerDirty(pPointer) == false)
+			{
+				cStaticAnalysis::PatchAlignedRetInstruction(NasmPath, pProcessInfo, pPointer);
+			}
+			else
+			{
+				std::cout << "Pointer: 0x" << std::hex << pPointer << " is dirty, skipping" << std::endl;
+			}
 		}
 		catch (std::exception e)
 		{

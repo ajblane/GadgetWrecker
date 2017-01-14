@@ -2,6 +2,7 @@
 
 #include "cStaticAnalysis.hpp"
 #include "cNasmWrapper.hpp"
+#include "cGenASM.hpp"
 
 #include "../shared/Utilities/cUtilities.hpp"
 
@@ -59,8 +60,14 @@ uint64_t cRemoteMemoryManager::GetPointer(uint32_t RequestedSize, std::shared_pt
 	{
 		uint64_t ResultPointer = _CurrentPointer;
 
-		_CurrentPointer += RequestedSize + 1;
-		_CurrentIndex += RequestedSize + 1;
+		_CurrentPointer += RequestedSize;
+		_CurrentIndex += RequestedSize;
+
+		if (_CurrentPointer % 2 == 1)
+		{
+			_CurrentPointer++;
+			_CurrentIndex++;
+		}
 
 		return ResultPointer;
 	}
@@ -140,6 +147,20 @@ cs_insn* cDisassembledPage::GetInstructionAtAddress(uint64_t Address)
 			return &_DisasembledInstructions[i];
 
 	return pResult;
+}
+
+size_t cDisassembledPage::GetInstructionIdAtAddress(uint64_t Address)
+{
+	for (size_t i = 0; i < _NumberOfInstructions; i++)
+		if (_DisasembledInstructions[i].address == Address)
+			return i;
+
+	return 0;
+}
+
+cs_insn * cDisassembledPage::GetInstructionAtIndex(size_t Index)
+{
+	return &_DisasembledInstructions[Index];
 }
 
 size_t cDisassembledPage::GetNumInstructions()
@@ -253,8 +274,90 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 	return Result;
 }
 
-uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer)
+void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer)
 {
+	auto OriginalPage = DisassemblePageAroundPointer(pProcess, pPointer);
+
+	if (OriginalPage.IsInstructionAtAddressAligned(pPointer) == false)
+		return;
+
+	size_t ReturnInstructionIndex = OriginalPage.GetInstructionIdAtAddress(pPointer);
+
+	if (ReturnInstructionIndex <= 5)
+		return;
+
+	size_t ChangeStartIndex = ReturnInstructionIndex;
+	size_t NumberOfInstructionsChanged = 0;
+	size_t TotalReplacementSize = 0;
+	uint64_t RemotePatchLocation = 0;
+
+	std::string StubSource = "";
+
+	while(TotalReplacementSize < 5)
+	{
+		auto pCurrentInstruction = OriginalPage.GetInstructionAtIndex(ChangeStartIndex);
+
+		std::string CurrentLine = pCurrentInstruction->mnemonic + std::string(" ") + pCurrentInstruction->op_str + "\n";
+
+		if (CurrentLine.find("lea") != std::string::npos)
+		{
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
+		}
+
+		CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
+
+		StubSource = CurrentLine + StubSource;
+
+		ChangeStartIndex--;
+		NumberOfInstructionsChanged++;
+		TotalReplacementSize += pCurrentInstruction->size;
+		RemotePatchLocation = pCurrentInstruction->address;
+	}
+
+	ChangeStartIndex++;
+
+	size_t RemoteStubMemory = cRemoteMemoryManager::GetPointer(TotalReplacementSize + 12, pProcess);
+
+	std::vector<uint8_t> PatchBytes;
+	for (size_t i = 0; i < TotalReplacementSize; i++)
+		PatchBytes.push_back(0xcc);
+
+	PatchBytes[0] = 0xe9;
+	*(uint32_t*)&PatchBytes[1] = (uint32_t)RemoteStubMemory - RemotePatchLocation - 5;   // Only for x86 PATCH ME!
+	
+	StubSource = "bits 32\nORG " + std::to_string(RemoteStubMemory) + "\n" + StubSource;
+	
+	//std::cout << "Assembling: " << ReplacementSource << std::endl;
+
+	auto StubBytes = cNasmWrapper::AssembleASMSource(NasmPath, StubSource);
+
+	if (StubBytes.size() == 0)
+	{
+		std::cout << "Error source: " << StubSource << std::endl;
+		throw cUtilities::FormatExceptionString(__FILE__, "StubBytes.size() == 0");
+	}
+
+	if (pProcess->WriteMemoryInProcess((void*)RemoteStubMemory, StubBytes) == false)
+		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess((void*)RemoteStubMemory, StubBytes) == false");
+
+	if(pProcess->WriteMemoryInProcess((void*)RemotePatchLocation, PatchBytes) == false)
+		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess((void*)RemotePatchLocation, PatchBytes) == false");
+
+	auto NewPage = DisassemblePageAroundPointer(pProcess, RemoteStubMemory);
+	size_t StartIndex = NewPage.GetInstructionIdAtAddress(RemoteStubMemory);
+
+	cRemoteFreeBranchInterdictor::MassAddToLookupTable(OriginalPage, NewPage, ChangeStartIndex, StartIndex, NumberOfInstructionsChanged);
+
+	uint64_t DirtyRangeStart = RemotePatchLocation;
+	uint64_t DirtyRangeEnd = RemotePatchLocation + PatchBytes.size();
+
+	cDirtyRangeMarker::AddDirtyRange(DirtyRangeStart, DirtyRangeEnd);
+
+	//RemoteReplacementPageIndex
+
+	/*
 	// The new location of the RET instruction
 	uint64_t Result = 0;
 
@@ -298,7 +401,7 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 		NumberOfInstructions = 0;
 		insn = NULL;
 		handle = NULL;
-		
+
 		return aResult;
 	};
 
@@ -323,99 +426,101 @@ uint64_t cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath
 			return Cleanup(Result);
 	}
 
-	if (InstructionOffset >= 5)
+	// Check that we have enough space to analyse the instructions around our target.
+	if (InstructionOffset < 5 || InstructionOffset + 5 >= NumberOfInstructions)
+		return Cleanup(Result);
+
+	std::string CurrentSource = "";
+
+	uint64_t PatchedLocation = insn[InstructionOffset - 5].address;
+	uint64_t PatchedSize = 0;
+
+	for (size_t i = InstructionOffset - 5; i < InstructionOffset + 5; i++)
 	{
-		std::string CurrentSource = "";
+		//std::cout << "0x" << std::hex << insn[i].address << ": " << insn[i].mnemonic << " " << insn[i].op_str << " "
+		//	<< "referenced: " << (cReferenceCounter::IsReferenced(insn[i].address) ? "yes" : "no");
+		//std::getline(std::cin, std::string());
 
-		uint64_t PatchedLocation = insn[InstructionOffset - 5].address;
-		uint64_t PatchedSize = 0;
+		std::string CurrentLine = insn[i].mnemonic + std::string(" ") + insn[i].op_str + "\n";
 
-		for (size_t i = InstructionOffset - 5; i < InstructionOffset + 5; i++)
+		if (Useint3hHack)
+			if (insn[i].id == X86_INS_INT3)
+				continue;
+
+		if (i <= InstructionOffset)
 		{
-			//std::cout << "0x" << std::hex << insn[i].address << ": " << insn[i].mnemonic << " " << insn[i].op_str << " "
-			//	<< "referenced: " << (cReferenceCounter::IsReferenced(insn[i].address) ? "yes" : "no");
-			//std::getline(std::cin, std::string());
-
-			std::string CurrentLine = insn[i].mnemonic + std::string(" ") + insn[i].op_str + "\n";
-
-			if (Useint3hHack)
-				if (insn[i].id == X86_INS_INT3)
-					continue;
-
-			if (i <= InstructionOffset)
+			if (CurrentLine.find("lea") != std::string::npos)
 			{
-				if (CurrentLine.find("lea") != std::string::npos)
-				{
-					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
-					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
-					CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
-				}
-
-				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
-
-				CurrentSource += CurrentLine;
-
-				PatchedSize += insn[i].size;
-
-				if (cStaticReferenceCounter::IsReferenced(insn[i].address))
-					IsReferenced = true;
+				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
+				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
+				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
 			}
-		}
 
-		if (IsReferenced == true)
-			return Cleanup(Result);
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
 
-		// We need at least 5 bytes to place a jump.
-		if(PatchedSize < 5)
-			return Cleanup(Result);
+			CurrentSource += CurrentLine;
 
-		std::vector<uint8_t> ReplacementBuffer;
-		for (size_t i = 0; i < PatchedSize; i++)
-			ReplacementBuffer.push_back(0xcc);
+			PatchedSize += insn[i].size;
 
-		//				Expansion possible: 2 -> 5 = 4x3 extra bytes = 12 padding bytes, assuming 4 instructions previous to the ret that expand from 2 to 5 bytes
-		// TODO parse instructions to see if any branches or free branches are present and add padding accordingly.
-		size_t RemoteReplacementPageIndex = cRemoteMemoryManager::GetPointer(PatchedSize + 12, pProcess);
-
-		ReplacementBuffer[0] = 0xe9;
-		*(uint32_t*)&ReplacementBuffer[1] = (uint32_t)RemoteReplacementPageIndex - PatchedLocation - 5;   // Only for x86 PATCH ME!
-
-
-		CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
-		CurrentSource = "bits 32\n" + CurrentSource;
-
-		//std::cout << "Assembling: " << CurrentSource << std::endl;
-
-		auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
-
-		std::cout << "Patching: " << ReplacementData.size() << " bytes at: 0x" << std::hex << PatchedLocation << std::endl;
-		std::cout << "Redirecting function exit to: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
-		//	std::getline(std::cin, std::string());
-
-		if (ReplacementData.size() == 0)
-		{
-			std::cout << "Error source: " << CurrentSource << std::endl;
-			CleanException("ReplacementData.size() == 0");
-		}
-
-		if (pProcess->WriteMemoryInProcess((void*)RemoteReplacementPageIndex, ReplacementData))
-		{
-			if (!pProcess->WriteMemoryInProcess((void*)PatchedLocation, ReplacementBuffer))
-			{
-				std::cout << "Failed to write jump to new exitcode at: 0x" << std::hex << PatchedLocation << std::endl;
-			}
-			else
-			{
-				Result = RemoteReplacementPageIndex;
-			}
-		}
-		else
-		{
-			std::cout << "Failed to write replaced function exit at: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
+			if (cStaticReferenceCounter::IsReferenced(insn[i].address))
+				IsReferenced = true;
 		}
 	}
 
+	if (IsReferenced == true)
+		return Cleanup(Result);
+
+	// We need at least 5 bytes to place a jump.
+	if (PatchedSize < 5)
+		return Cleanup(Result);
+
+	std::vector<uint8_t> ReplacementBuffer;
+	for (size_t i = 0; i < PatchedSize; i++)
+		ReplacementBuffer.push_back(0xcc);
+
+	//				Expansion possible: 2 -> 5 = 4x3 extra bytes = 12 padding bytes, assuming 4 instructions previous to the ret that expand from 2 to 5 bytes
+	// TODO parse instructions to see if any branches or free branches are present and add padding accordingly.
+	size_t RemoteReplacementPageIndex = cRemoteMemoryManager::GetPointer(PatchedSize + 12, pProcess);
+
+	ReplacementBuffer[0] = 0xe9;
+	*(uint32_t*)&ReplacementBuffer[1] = (uint32_t)RemoteReplacementPageIndex - PatchedLocation - 5;   // Only for x86 PATCH ME!
+
+
+	CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
+	CurrentSource = "bits 32\n" + CurrentSource;
+
+	//std::cout << "Assembling: " << CurrentSource << std::endl;
+
+	auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
+
+	std::cout << "Patching: " << ReplacementData.size() << " bytes at: 0x" << std::hex << PatchedLocation << std::endl;
+	std::cout << "Redirecting function exit to: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
+	//	std::getline(std::cin, std::string());
+
+	if (ReplacementData.size() == 0)
+	{
+		std::cout << "Error source: " << CurrentSource << std::endl;
+		CleanException("ReplacementData.size() == 0");
+	}
+
+	if (pProcess->WriteMemoryInProcess((void*)RemoteReplacementPageIndex, ReplacementData))
+	{
+		if (!pProcess->WriteMemoryInProcess((void*)PatchedLocation, ReplacementBuffer))
+		{
+			std::cout << "Failed to write jump to new exitcode at: 0x" << std::hex << PatchedLocation << std::endl;
+		}
+		else
+		{
+			Result = RemoteReplacementPageIndex;
+		}
+	}
+	else
+	{
+		std::cout << "Failed to write replaced function exit at: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
+	}
+
 	return Cleanup(Result);
+	*/
 }
 
 void cFreeBranchReferenceCounter::AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength)

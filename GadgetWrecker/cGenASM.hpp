@@ -9,6 +9,7 @@
 
 #include "cNasmWrapper.hpp"
 #include "cProcess.hpp"
+#include "cStaticAnalysis.hpp"
 
 enum eArgumentType
 {
@@ -61,32 +62,42 @@ public:
 
 };
 
-class cRemoteLongLookupWriter
+class cDirtyRangeMarker
 {
+private:
+	static std::vector<std::pair<uint64_t, uint64_t>> _DirtyRanges;
+
 public:
-	static void WriteRemoteLookupTable(std::shared_ptr<cProcessInformation> pProcess, uint64_t LookupLocation, const std::map<uint64_t, uint64_t>& Table);
+
+	static bool IsPointerDirty(uint64_t Pointer);
+	static bool IsRangeDirty(uint64_t RangeStart, uint64_t RangeEnd);
+	static void AddDirtyRange(uint64_t RangeStart, uint64_t RangeEnd);
 };
 
-class cRemoteLongLookupReader
+class cRemoteLongLookupInteraction
 {
 public:
 	static std::map<uint64_t, uint64_t> ReadRemoteLookupTable(std::shared_ptr<cProcessInformation> pProcess, uint64_t LookupLocation);
+	static void WriteRemoteLookupTable(std::shared_ptr<cProcessInformation> pProcess, uint64_t LookupLocation, const std::string& NasmPath, const std::map<uint64_t, uint64_t>& Table);
 };
 
 class cRemoteFreeBranchInterdictor
 {
 private:
-	static std::vector<cPreparedRemoteBranchPatches>	_PreparedPatches;
+	static std::vector<cPreparedRemoteBranchPatches>	_TargetFreeBranchesSizeFive;
+	static std::vector<cPreparedRemoteBranchPatches>	_TargetFreeBranchesSizeFour;
 	static std::map<uint64_t, uint64_t>					_LocalLookupTable;
 
 	static uint64_t _RemoteInterdictedLookupTable;
 	static bool _Commited;
 
-	static bool InterdictFreeBranchSizeFive(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation);
+	static bool InterdictLargeFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation);
+	static bool InterdictShortFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation);
 
 public:
 	static bool PrepareBranchInterdiction(uint64_t BranchLocation, uint64_t BranchSize);
 
+	static void MassAddToLookupTable(cDisassembledPage& OriginalPage, cDisassembledPage& NewPage, uint64_t ModifyIndex, uint64_t NewPageStartIndex, uint8_t NumChanges);
 	static void AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation);
 	static void Commit(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess);
 };

@@ -69,6 +69,10 @@ public:
 
 	bool	IsInstructionAtAddressAligned(uint64_t Address);
 	cs_insn*	GetInstructionAtAddress(uint64_t Address);
+	
+	size_t		GetInstructionIdAtAddress(uint64_t Address);
+	cs_insn*	GetInstructionAtIndex(size_t Index);
+
 	size_t		GetNumInstructions();
 	cs_insn*	GetAllInstructions();
 };
@@ -81,7 +85,7 @@ public:
 	
 	static cDisassembledPage DisassemblePageAroundPointer(std::shared_ptr<cProcessInformation> pProcess, uint64_t UnalignedPointer);
 	static std::vector<uint64_t> AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule);
-	static uint64_t PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer);
+	static void PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer);
 };
 
 #endif
