@@ -64,9 +64,9 @@ The attacker cannot:
 ===========================================
 
     - Partial analysis of arbitrary executables and rewriting RETurn instructions 
-    - Partial analysis and interdiction of free branch instructions with a size of 5 bytes and longer                              <====== We are here
+    - Partial analysis and interdiction of free branch instructions with a size of 5 bytes and longer
     - Partial analysis and interdiction of free bracnh instructions with a size of 2 bytes and longer
-    - Partial analysis and interdiction of static branch instructions of any size
+    - Partial analysis and interdiction of static branch instructions of any size                               <====== We are here
     - Best effort analysis and interdiction of branches
     - Caching intercepted calls by writing them to the 'shortlist' (see cGenASM.hpp as of 31/12/2016)
     - 1.0 release (if ever): Running all known vulnerable versions of the firefox browser with at least 20 tabs for 30 minutes without crashing and crashing all public exploits for that version.
