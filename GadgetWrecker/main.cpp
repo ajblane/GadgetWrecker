@@ -92,6 +92,40 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
+	std::cout << "Suspending process" << std::endl;
+	
+	auto Threads = cProcessInformation::GetProcessThreads(pProcessInfo->ProcessId);
+
+	for (auto x : Threads)
+	{
+		if (x.OpenThread() == false)
+		{
+			std::cout << "Error: failed to open thread, process will not be completely suspended" << std::endl;
+			continue;
+		}
+
+		if (x.SuspendThread() == false)
+			std::cout << "Warning: One or more threads are not suspended, process is not completely suspended" << std::endl;
+	}
+	for (auto x : Threads)
+	{
+		if (x.OpenThread() == false)
+		{
+			std::cout << "Error: failed to open thread, process will not be completely suspended" << std::endl;
+			continue;
+		}
+
+		auto Context = x.GetThreadContext();
+
+		uint64_t TaintedPointer = Context.Eip;
+		// Todo Read the instruction at the pointer to check the actual size instead of hardcoding 8 bytes
+		for(char i = 0; i < 8; i++)
+			cStaticReferenceCounter::AddReference(TaintedPointer, TaintedPointer+i);
+	}
+
+	//if (pProcessInfo->SuspendProcess() == false)
+		std::cout << "Warning: One or more threads are not suspended, process is not completely suspended" << std::endl;
+
 	std::cout << "Scanning memory space of: " << LoadedModules.size() << " modules" << std::endl;
 
 	std::vector<uint64_t> ReturnPointers;
@@ -152,11 +186,6 @@ int main(int argc, char** argv)
 
 	std::shuffle(ReturnPointers.begin(), ReturnPointers.end(), std::random_device());
 
-	std::cout << "Suspending process" << std::endl;
-
-	if (pProcessInfo->SuspendProcess() == false)
-		std::cout << "Warning: One or more threads are not suspended, process is not completely suspended" << std::endl;
-
 	std::cout << "Patching: " << Parameters["--number"] << " random pointers" << std::endl;
 
 	size_t PatchCounter = strtol(Parameters["--number"].c_str(), NULL, 10);
@@ -210,9 +239,22 @@ int main(int argc, char** argv)
 	}
 
 	std::cout << "Resuming process" << std::endl;
+	std::getchar();
 
-	if (pProcessInfo->ResumeProcess() == false)
-		std::cout << "Warning: One or more threads are not resumed, process is not completely resumed" << std::endl;
+	for (auto x : Threads)
+	{
+		if (x.OpenThread() == false)
+		{
+			std::cout << "Error: failed to open thread, process will not be completely suspended" << std::endl;
+			continue;
+		}
+
+		if (x.ResumeThread() == false)
+			std::cout << "Warning: One or more threads are not resumed, process is not completely resumed" << std::endl;
+	}
+
+	//if (pProcessInfo->ResumeProcess() == false)
+		//std::cout << "Warning: One or more threads are not resumed, process is not completely resumed" << std::endl;
 
 	return 0;
 }

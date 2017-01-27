@@ -37,7 +37,7 @@ class cGenASMHelper
 {
 public:
 	static std::string GenerateCallSource(uint32_t CallLocation, std::vector<cArgument> Arguments);
-	static std::string GenerateInterdictionStub(uint64_t MemoryLocation, uint64_t FromLocation, uint64_t FunCheckLongList, std::string OperandExpression);
+	static std::string GenerateInterdictionStub(uint64_t MemoryLocation, uint64_t FromLocation, uint64_t FunCheckLongList, std::string OperandExpression, bool IsCall = true);
 	static std::string GenerateLongLookupTableChecker(uint64_t MemoryLocation, std::map<uint64_t, uint64_t> MemoryTranslation);
 };
 

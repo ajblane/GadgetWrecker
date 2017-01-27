@@ -75,6 +75,28 @@ bool cThreadInformation::ResumeThread()
 	return true;
 }
 
+CONTEXT cThreadInformation::GetThreadContext()
+{
+	CONTEXT Result = {};
+	
+	if (!IsThreadOpened())
+		return Result;
+
+	Result.ContextFlags = CONTEXT_ALL;
+	
+	::GetThreadContext(ThreadHandle->hHandle, &Result);
+
+	return Result;
+}
+
+void cThreadInformation::SetThreadContext(const CONTEXT & Context)
+{
+	if (!IsThreadOpened())
+		return;
+
+	::SetThreadContext(ThreadHandle->hHandle, &Context);
+}
+
 DWORD cThreadInformation::GetExitCode()
 {
 	if (!IsThreadOpened())

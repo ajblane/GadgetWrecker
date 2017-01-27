@@ -56,6 +56,9 @@ public:
 
 	bool ResumeThread();
 
+	CONTEXT GetThreadContext();
+	void	SetThreadContext(const CONTEXT& Context);
+
 	DWORD GetExitCode();
 
 	DWORD WaitForExitCode();

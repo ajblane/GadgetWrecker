@@ -74,12 +74,23 @@ std::string cGenASMHelper::GenerateCallSource(uint32_t CallLocation, std::vector
 	return Result;
 }
 
-std::string cGenASMHelper::GenerateInterdictionStub(uint64_t MemoryLocation, uint64_t FromLocation, uint64_t FunCheckLongList, std::string OperandExpression)
+std::string cGenASMHelper::GenerateInterdictionStub(uint64_t MemoryLocation, uint64_t FromLocation, uint64_t FunCheckLongList, std::string OperandExpression, bool IsCall)
 {
 	if (OperandExpression.find("esp") != std::string::npos)
 		throw cUtilities::FormatExceptionString(__FILE__, "OperandExpression.find(\"esp\") != std::string::npos");
 
-	std::string Result
+	std::string Result = "";
+
+	/*
+	The code below functions has two functions. The first function, 
+	interdicting and possibly rerouting a free branch type instruction is already completed. 
+
+	The other function is to cache branches that have been called
+	in the local list, to improve performance. This	Is not yet completed.
+	*/
+
+	if(IsCall)
+		Result		// This is the code for patching a free call type
 		=
 		R"(
 			bits 32
@@ -124,6 +135,51 @@ ToEaxLocation:
 			pop eax							; esp - 10
 			push )" + std::to_string(FromLocation) + R"( ;Template arg 4 -> FromLocation + 4 (ret), act as if we called; esp - c
 			jmp dword [esp-0xc]			; To original location
+		)";
+	else
+		Result		// This is the code for patching a free jump type
+		=
+		R"(
+			bits 32
+			org )" + std::to_string(MemoryLocation) + R"(						; arg 0 -> location in memory
+			push eax
+			push ecx
+			push ebx	
+			call PastShortlist
+
+				dd 1, 0							; 1 is rewritten to 0
+				dd 0, 0							; 0 is rewritten to 0
+
+PastShortlist: 
+			mov eax, )" + OperandExpression + R"( ; arg 1 -> OperandExpression
+			xor ecx, ecx			
+			pop ebx
+LoopLocation:
+			cmp dword [ebx+ecx], eax
+			je ShortlistOut
+			cmp dword [ebx+ecx], 0
+			je EndOfShortlist
+			add ecx, 0x8					; Jump to next entry in shortlist
+			jmp LoopLocation				; Repeat the check
+ShortlistOut:
+			add ecx, 4
+			mov ecx, dword [ebx+ecx]
+			mov dword [esp-4], ecx			; esp - 4, esp - 8, esp - c, esp - 10
+			pop	ebx							; esp - 8
+			pop ecx							; esp - c
+			pop eax							; esp - 10
+			jmp	dword [esp-0x10]			; To rewritten location
+EndOfShortlist:
+			call )" + std::to_string(FunCheckLongList) + R"(; arg 3 -> FunCheckLongList, this function taints eax, ecx and ebx (eax is the result)
+			; eax -> Rewritten location, will jump here
+			; TODO: append eax to the shortlist for greater performance
+
+ToEaxLocation:
+			mov dword [esp-4], eax			; esp - 4
+			pop ebx							; esp - 8
+			pop ecx							; esp - c
+			pop eax							; esp - 10
+			jmp dword [esp-0x10]			; To original location
 		)";
 
 	return Result;
@@ -252,6 +308,17 @@ bool cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& N
 		return false;
 	};
 
+	auto IsInstructionCall = [&](cs_insn* pInstr) -> bool
+	{
+		cs_detail *detail = pInstr->detail;
+
+		for (size_t x = 0; x < detail->groups_count; x++)
+			if (detail->groups[x] == X86_GRP_CALL)
+				return true;
+
+		return false;
+	};
+
 	const size_t StubFunctionReservedSize = 0x60;
 
 	if (_Commited == true)
@@ -271,6 +338,8 @@ bool cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& N
 
 	auto BranchInstruction = PageInformation.GetInstructionAtAddress(BranchLocation);
 
+	bool IsCallType = IsInstructionCall(BranchInstruction);
+
 	size_t ChangeIndex = PageInformation.GetInstructionIdAtAddress(BranchLocation);
 
 	std::string OperandExpression = BranchInstruction->op_str;
@@ -285,7 +354,7 @@ bool cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& N
 	// Nasm does not deal with this
 	OperandExpression = cUtilities::ReplaceAll(OperandExpression, "ptr", "");
 
-	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation + BranchInstruction->size, RemoteLongLookupTable, OperandExpression);
+	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation + BranchInstruction->size, RemoteLongLookupTable, OperandExpression, IsCallType);
 
 	// Size is 0x5b for this release.
 	auto InterdictionBytes = cNasmWrapper::AssembleASMSource(NasmPath, InterdictionStubSource);
@@ -404,7 +473,18 @@ bool cRemoteFreeBranchInterdictor::InterdictShortFreeBranch(const std::string& N
 		if(PreviousInstruction == NULL)
 			throw cUtilities::FormatExceptionString(__FILE__, "PreviousInstruction == NULL");
 
-		PreStubSource = PreviousInstruction->mnemonic + std::string(" ") + PreviousInstruction->op_str + ReplacementSource + "\n";
+		std::string CurrentLine = PreviousInstruction->mnemonic + std::string(" ") + PreviousInstruction->op_str + "\n";
+
+		if (CurrentLine.find("lea") != std::string::npos)
+		{
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
+			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
+		}
+
+		CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
+
+		PreStubSource = CurrentLine + PreStubSource + "\n";
 
 		ReplaceSize += PreviousInstruction->size;
 		ReplacementAddress = PreviousInstruction->address;
