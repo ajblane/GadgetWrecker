@@ -8,32 +8,9 @@
 #include <string>
 #include <memory>
 
-#include "cProcess.hpp"
 #include "CapstoneWrapper.hpp"
 
-class cStaticReferenceCounter
-{
-private:
-	static std::map<uint64_t, std::vector<uint64_t>> _ReferenceMap;
-
-public:
-
-	static void AddReference(uint64_t ReferenceLocation, uint64_t ReferenceTarget);
-	static bool IsReferenced(uint64_t ReferenceTarget);
-	static std::vector<uint64_t> GetReferenceLocations(uint64_t ReferenceTarget);
-};
-
-class cFreeBranchReferenceCounter
-{
-private:
-	static std::map<uint64_t, uint8_t> _FreeBranches;
-
-public:
-	static void AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength);
-	static bool IsLocationFreeBranch(uint64_t PotentialBranchLocation);
-	static std::map<uint64_t, uint8_t> GetAllFreeBranches();
-
-};
+#include "../shared/cProcess/cProcess/cProcess.hpp"
 
 class cSystemMemoryInformation
 {
@@ -67,7 +44,7 @@ public:
 	cDisassembledPage(uint64_t pBasePointer, const std::vector<uint8_t>& Memory);
 	~cDisassembledPage();
 
-	bool	IsInstructionAtAddressAligned(uint64_t Address);
+	bool		IsInstructionAtAddressAligned(uint64_t Address);
 	cs_insn*	GetInstructionAtAddress(uint64_t Address);
 	
 	size_t		GetInstructionIdAtAddress(uint64_t Address);
@@ -77,14 +54,53 @@ public:
 	cs_insn*	GetAllInstructions();
 };
 
+class cBranchEntry
+{
+public:
+	cBranchEntry(uint64_t aMemoryLocation, uint64_t aInstructionSize, uint64_t aBranchesTo, bool aIsFreeBranch);
+
+	uint64_t				MemoryLocation;
+	uint64_t				InstructionSize;
+	uint64_t				BranchesTo;
+	bool					IsFreeBranch;
+};
+
+typedef std::map<std::string, cBranchEntry> tBranchEntries;
+typedef std::map<std::string, uint64_t>		tBranchMemoryLocationUpdates;
+
+class cAnalysisResult
+{
+private:
+	tBranchEntries					_Branches;
+
+public:
+	cAnalysisResult(std::shared_ptr<cProcessInformation> aptrProcess);
+
+	void			AddBranches(const tBranchEntries& aBranchCollection);
+	void			UpdateBranchMemory(const tBranchMemoryLocationUpdates& aBranchUpdateCollection);
+
+	const bool			IsMemoryReferenced(uint64_t MemoryAddress)const;
+	const bool			IsBranchInstructionAtMemory(uint64_t MemoryAddress)const;
+	const bool			IsFreeBranchInstructionAtMemory(uint64_t MemoryAddress)const;
+	const cBranchEntry	GetBranchInstructionAtMemory(uint64_t MemoryAddress)const;
+
+	const std::vector<uint64_t>		GetAllReferencedMemory()const;
+
+	const tBranchEntries	GetAllBranches()const;
+	const tBranchEntries	GetAllFreeBranches()const;
+
+	std::shared_ptr<cProcessInformation>	ptrProcess;
+};
+
 class cStaticAnalysis
 {
 private:
 
 public:
-	
 	static cDisassembledPage DisassemblePageAroundPointer(std::shared_ptr<cProcessInformation> pProcess, uint64_t UnalignedPointer);
-	static std::vector<uint64_t> AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule);
+	static tBranchEntries AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule);
+	static cAnalysisResult AnalyseProcess(std::shared_ptr<cProcessInformation> pProcess, std::vector<std::string> TargetModules);
+
 	static void PatchAlignedRetInstruction(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t pPointer);
 };
 

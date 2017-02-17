@@ -8,11 +8,11 @@
 
 #include <filesystem>
 
-#include "cProcess.hpp"
 #include "cGenASM.hpp"
 #include "cStaticAnalysis.hpp"
 
 #include "../Shared/Utilities/cUtilities.hpp"
+#include "../shared/cProcess/cProcess/cProcess.hpp"
 
 bool Useint3hHack = true;
 
@@ -128,9 +128,6 @@ int main(int argc, char** argv)
 		}
 	}
 
-	//if (pProcessInfo->SuspendProcess() == false)
-		std::cout << "Warning: One or more threads are not suspended, process is not completely suspended" << std::endl;
-
 	std::cout << "Scanning memory space of: " << LoadedModules.size() << " modules" << std::endl;
 
 	std::vector<uint64_t> ReturnPointers;
@@ -166,7 +163,7 @@ int main(int argc, char** argv)
 		{
 			if (cStaticReferenceCounter::IsReferenced(x.first) == false)
 			{
-				if (cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
+				if (cStaticRemoteFreeBranchInterdictor::PrepareBranchInterdiction(x.first, x.second))
 				{
 					//std::cout << "Patching: 0x" << std::hex << x.first << std::endl;
 					// TODO: make sure these pointers travel back in time and are fixed before the LongLookup table is written to the remote process.
@@ -228,7 +225,7 @@ int main(int argc, char** argv)
 
 	try
 	{
-		cRemoteFreeBranchInterdictor::Commit(NasmPath, pProcessInfo);
+		cStaticRemoteFreeBranchInterdictor::Commit(NasmPath, pProcessInfo);
 	}
 	catch (std::exception e)
 	{

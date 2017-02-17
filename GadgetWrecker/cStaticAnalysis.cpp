@@ -1,4 +1,5 @@
 #include <iostream>
+#include <filesystem>
 
 #include "cStaticAnalysis.hpp"
 #include "cNasmWrapper.hpp"
@@ -7,29 +8,6 @@
 #include "../shared/Utilities/cUtilities.hpp"
 
 extern bool Useint3hHack;
-
-void cStaticReferenceCounter::AddReference(uint64_t ReferenceLocation, uint64_t ReferenceTarget)
-{
-	if (_ReferenceMap.find(ReferenceTarget) != _ReferenceMap.end())
-		_ReferenceMap[ReferenceTarget] = std::vector<uint64_t>();
-
-	_ReferenceMap[ReferenceTarget].push_back(ReferenceLocation);
-}
-
-bool cStaticReferenceCounter::IsReferenced(uint64_t ReferenceTarget)
-{
-	return _ReferenceMap.find(ReferenceTarget) != _ReferenceMap.end();
-}
-
-std::vector<uint64_t> cStaticReferenceCounter::GetReferenceLocations(uint64_t ReferenceTarget)
-{
-	if (IsReferenced(ReferenceTarget))
-		return _ReferenceMap[ReferenceTarget];
-	else
-		return std::vector<uint64_t>();
-}
-
-std::map<uint64_t, std::vector<uint64_t>> cStaticReferenceCounter::_ReferenceMap;
 
 bool cSystemMemoryInformation::IsPageExecutable(HANDLE hProcess, uint64_t pPage, uint64_t PageSize)
 {
@@ -188,9 +166,9 @@ cDisassembledPage cStaticAnalysis::DisassemblePageAroundPointer(std::shared_ptr<
 	return cDisassembledPage(BasePage, Memory);
 }
 
-std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule)
+tBranchEntries cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInformation> pProcess, cModuleWrapper aModule)
 {
-	std::vector<uint64_t> Result;
+	tBranchEntries Result;
 
 	auto CurrentPageSize = (uint32_t)cSystemMemoryInformation::GetPageSize();
 
@@ -201,74 +179,81 @@ std::vector<uint64_t> cStaticAnalysis::AnalyseModule(std::shared_ptr<cProcessInf
 
 	for (pRemotePointer; pRemotePointer + CurrentPageSize < pRemoteEndPointer; pRemotePointer += CurrentPageSize)
 	{
-		if (cSystemMemoryInformation::IsPageExecutable(pProcess->ProcessHandle->hHandle, pRemotePointer, CurrentPageSize))
+		if (cSystemMemoryInformation::IsPageExecutable(pProcess->ProcessHandle->hHandle, pRemotePointer, CurrentPageSize) == false)
+			continue;
+
+		auto DisassembledPage = cStaticAnalysis::DisassemblePageAroundPointer(pProcess, pRemotePointer);
+		
+		size_t NumberOfInstructions = DisassembledPage.GetNumInstructions();
+
+		if (NumberOfInstructions == 0 || NumberOfInstructions == -1)
+			continue;
+
+		cs_insn* pCurrentInstructions = DisassembledPage.GetAllInstructions();
+
+		for (size_t i = 0; i < NumberOfInstructions; i++)
 		{
-			auto PageData = cStaticAnalysis::DisassemblePageAroundPointer(pProcess, pRemotePointer);
+			cs_detail* pDetails = pCurrentInstructions[i].detail;
 
-			size_t NumberOfInstructions = PageData.GetNumInstructions();
-
-			if (NumberOfInstructions == 0 || NumberOfInstructions == -1)
-				continue;
-
-			/*
-			for (size_t i = 0; i < Memory.size(); i++)
+			if (pCurrentInstructions[i].id == X86_INS_RET)
 			{
-				if (Memory[i] == 0xc3)
-				{
-					This woul also count unaligned instructions, we won't deal with those for now.
-					Result.push_back(pRemotePointer + i);
-				}
+				Result[cUtilities::GenerateRandomData("abcdefghijklmnopqrstuvwxyz0123456789", 15)] = cBranchEntry(pCurrentInstructions[i].address, pCurrentInstructions[i].size, 0, true);
 			}
-			*/
-
-			cs_insn* insn = PageData.GetAllInstructions();
-
-			for (size_t i = 0; i < NumberOfInstructions; i++)
+			else
 			{
-				cs_detail *detail = insn[i].detail;
+				if (pDetails->groups_count <= 0)
+					continue;
 
-				if (insn[i].id == X86_INS_RET)
+				for (size_t x = 0; x < pDetails->groups_count; x++)
 				{
-					Result.push_back(insn[i].address);
-				}
-
-				if (detail->groups_count > 0)
-				{
-					for (size_t x = 0; x < detail->groups_count; x++)
+					if (pDetails->groups[x] == X86_GRP_JUMP)
 					{
-						if (detail->groups[x] == X86_GRP_JUMP)
-						{
-							auto pOperands = detail->x86.operands;
+						auto pOperands = pDetails->x86.operands;
 
-							if (pOperands->type == X86_OP_IMM)
-								cStaticReferenceCounter::AddReference(insn[i].address, pOperands->imm);
-							else
-								cFreeBranchReferenceCounter::AddFreeBranch(insn[i].address, insn[i].size);
-						}
-						else if (detail->groups[x] == X86_GRP_CALL)
-						{
-							auto pOperands = detail->x86.operands;
-
-							if (pOperands->type == X86_OP_IMM)
-								cStaticReferenceCounter::AddReference(insn[i].address, pOperands->imm);
-							else
-								cFreeBranchReferenceCounter::AddFreeBranch(insn[i].address, insn[i].size);
-						}
+						if (pOperands->type == X86_OP_IMM || pOperands->type == X86_GRP_CALL)
+							Result[cUtilities::GenerateRandomData("abcdefghijklmnopqrstuvwxyz0123456789", 15)] = cBranchEntry(pCurrentInstructions[i].address, pCurrentInstructions[i].size, pOperands->imm, false);
+						else
+							Result[cUtilities::GenerateRandomData("abcdefghijklmnopqrstuvwxyz0123456789", 15)] = cBranchEntry(pCurrentInstructions[i].address, pCurrentInstructions[i].size, 0, true);
 					}
 				}
-
-				/*
-				for (size_t x = 0; x < detail->x86.op_count; x++)
-				{
-					if (detail->x86.operands[x].type == X86_OP_MEM)
-					{
-						auto pOperands = detail->x86.operands[x];
-						cStaticReferenceCounter::AddReference(insn[i].address, pOperands.mem.disp);
-					}
-				}
-				*/
 			}
 		}
+	}
+
+	return Result;
+}
+
+cAnalysisResult cStaticAnalysis::AnalyseProcess(std::shared_ptr<cProcessInformation> pProcess, std::vector<std::string> TargetModules)
+{
+	cAnalysisResult Result(pProcess);
+
+	std::vector<cModuleWrapper> CurrentlyLoadedModules = cProcessInformation::GetProcessModules(Result.ptrProcess->ProcessId);
+	std::vector<cModuleWrapper> TargetedModules;
+
+	if (TargetModules.size() != 0)
+	{
+		for (auto x : CurrentlyLoadedModules)
+		{
+			std::string ModuleName = cUtilities::WideStringToString(x.ModuleName);
+
+			ModuleName = std::experimental::filesystem::path(ModuleName).filename().string();
+
+			if (std::find(TargetModules.begin(), TargetModules.end(), ModuleName) != TargetModules.end())
+				TargetedModules.push_back(x);
+		}
+	}
+	else
+	{
+		TargetedModules = CurrentlyLoadedModules;
+	}
+
+	if (TargetedModules.size() == 0)
+		throw cUtilities::FormatExceptionString(__FILE__, "TargetedModules.size() == 0");
+
+	for (auto CurrentModule: TargetedModules)
+	{
+		auto BranchEntries = AnalyseModule(Result.ptrProcess, CurrentModule);
+		Result.AddBranches(BranchEntries);
 	}
 
 	return Result;
@@ -348,195 +333,95 @@ void cStaticAnalysis::PatchAlignedRetInstruction(const std::string& NasmPath, st
 	auto NewPage = DisassemblePageAroundPointer(pProcess, RemoteStubMemory);
 	size_t StartIndex = NewPage.GetInstructionIdAtAddress(RemoteStubMemory);
 
-	cRemoteFreeBranchInterdictor::MassAddToLookupTable(OriginalPage, NewPage, ChangeStartIndex, StartIndex, NumberOfInstructionsChanged);
+	cStaticRemoteFreeBranchInterdictor::MassAddToLookupTable(OriginalPage, NewPage, ChangeStartIndex, StartIndex, NumberOfInstructionsChanged);
 
 	uint64_t DirtyRangeStart = RemotePatchLocation;
 	uint64_t DirtyRangeEnd = RemotePatchLocation + PatchBytes.size();
 
 	cDirtyRangeMarker::AddDirtyRange(DirtyRangeStart, DirtyRangeEnd);
-
-	//RemoteReplacementPageIndex
-
-	/*
-	// The new location of the RET instruction
-	uint64_t Result = 0;
-
-	size_t PageSize = cSystemMemoryInformation::GetPageSize();
-
-	uint64_t PageOffset = (pPointer % PageSize);
-	uint64_t BasePage = pPointer - PageOffset;
-
-	auto Memory = pProcess->ReadMemoryInprocess((void*)BasePage, PageSize);
-
-	if (Memory.size() == 0)
-		throw cUtilities::FormatExceptionString(__FILE__, "Memory.size() == 0");
-
-	csh handle = NULL;
-	size_t NumberOfInstructions = 0;
-	cs_insn *insn = NULL;
-
-	auto CleanException = [&](const std::string& Message)
-	{
-		if (insn != NULL && NumberOfInstructions != 0)
-			cs_free(insn, NumberOfInstructions);
-
-		if (handle != NULL)
-			cs_close(&handle);
-
-		NumberOfInstructions = 0;
-		insn = NULL;
-		handle = NULL;
-
-		throw cUtilities::FormatExceptionString(__FILE__, Message);
-	};
-
-	auto Cleanup = [&](uint64_t aResult) -> uint64_t
-	{
-		if (insn != NULL && NumberOfInstructions != 0)
-			cs_free(insn, NumberOfInstructions);
-
-		if (handle != NULL)
-			cs_close(&handle);
-
-		NumberOfInstructions = 0;
-		insn = NULL;
-		handle = NULL;
-
-		return aResult;
-	};
-
-	if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK)
-		CleanException("cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)");
-
-	cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON); // turn ON detail feature with CS_OPT_ON
-
-	NumberOfInstructions = cs_disasm(handle, Memory.data(), Memory.size(), BasePage, 0, &insn);
-
-	if (NumberOfInstructions <= 0)
-		CleanException("NumberOfInstructions <= 0");
-
-	size_t InstructionOffset = 0;
-	bool IsReferenced = false;
-
-	for (size_t i = 0; InstructionOffset == 0 && i < NumberOfInstructions; i++)
-	{
-		if (insn[i].address == pPointer)
-			InstructionOffset = i;
-		else if (insn[i].address > pPointer)
-			return Cleanup(Result);
-	}
-
-	// Check that we have enough space to analyse the instructions around our target.
-	if (InstructionOffset < 5 || InstructionOffset + 5 >= NumberOfInstructions)
-		return Cleanup(Result);
-
-	std::string CurrentSource = "";
-
-	uint64_t PatchedLocation = insn[InstructionOffset - 5].address;
-	uint64_t PatchedSize = 0;
-
-	for (size_t i = InstructionOffset - 5; i < InstructionOffset + 5; i++)
-	{
-		//std::cout << "0x" << std::hex << insn[i].address << ": " << insn[i].mnemonic << " " << insn[i].op_str << " "
-		//	<< "referenced: " << (cReferenceCounter::IsReferenced(insn[i].address) ? "yes" : "no");
-		//std::getline(std::cin, std::string());
-
-		std::string CurrentLine = insn[i].mnemonic + std::string(" ") + insn[i].op_str + "\n";
-
-		if (Useint3hHack)
-			if (insn[i].id == X86_INS_INT3)
-				continue;
-
-		if (i <= InstructionOffset)
-		{
-			if (CurrentLine.find("lea") != std::string::npos)
-			{
-				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "dword", "");
-				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "word", "");
-				CurrentLine = cUtilities::ReplaceAll(CurrentLine, "byte", "");
-			}
-
-			CurrentLine = cUtilities::ReplaceAll(CurrentLine, "ptr", "");
-
-			CurrentSource += CurrentLine;
-
-			PatchedSize += insn[i].size;
-
-			if (cStaticReferenceCounter::IsReferenced(insn[i].address))
-				IsReferenced = true;
-		}
-	}
-
-	if (IsReferenced == true)
-		return Cleanup(Result);
-
-	// We need at least 5 bytes to place a jump.
-	if (PatchedSize < 5)
-		return Cleanup(Result);
-
-	std::vector<uint8_t> ReplacementBuffer;
-	for (size_t i = 0; i < PatchedSize; i++)
-		ReplacementBuffer.push_back(0xcc);
-
-	//				Expansion possible: 2 -> 5 = 4x3 extra bytes = 12 padding bytes, assuming 4 instructions previous to the ret that expand from 2 to 5 bytes
-	// TODO parse instructions to see if any branches or free branches are present and add padding accordingly.
-	size_t RemoteReplacementPageIndex = cRemoteMemoryManager::GetPointer(PatchedSize + 12, pProcess);
-
-	ReplacementBuffer[0] = 0xe9;
-	*(uint32_t*)&ReplacementBuffer[1] = (uint32_t)RemoteReplacementPageIndex - PatchedLocation - 5;   // Only for x86 PATCH ME!
-
-
-	CurrentSource = "ORG " + std::to_string(RemoteReplacementPageIndex) + "\n" + CurrentSource;
-	CurrentSource = "bits 32\n" + CurrentSource;
-
-	//std::cout << "Assembling: " << CurrentSource << std::endl;
-
-	auto ReplacementData = cNasmWrapper::AssembleASMSource(NasmPath, CurrentSource);
-
-	std::cout << "Patching: " << ReplacementData.size() << " bytes at: 0x" << std::hex << PatchedLocation << std::endl;
-	std::cout << "Redirecting function exit to: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
-	//	std::getline(std::cin, std::string());
-
-	if (ReplacementData.size() == 0)
-	{
-		std::cout << "Error source: " << CurrentSource << std::endl;
-		CleanException("ReplacementData.size() == 0");
-	}
-
-	if (pProcess->WriteMemoryInProcess((void*)RemoteReplacementPageIndex, ReplacementData))
-	{
-		if (!pProcess->WriteMemoryInProcess((void*)PatchedLocation, ReplacementBuffer))
-		{
-			std::cout << "Failed to write jump to new exitcode at: 0x" << std::hex << PatchedLocation << std::endl;
-		}
-		else
-		{
-			Result = RemoteReplacementPageIndex;
-		}
-	}
-	else
-	{
-		std::cout << "Failed to write replaced function exit at: 0x" << std::hex << RemoteReplacementPageIndex << std::endl;
-	}
-
-	return Cleanup(Result);
-	*/
 }
 
-void cFreeBranchReferenceCounter::AddFreeBranch(uint64_t BranchLocation, uint8_t InstructionLength)
+cBranchEntry::cBranchEntry(uint64_t aMemoryLocation, uint64_t aInstructionSize, uint64_t aBranchesTo, bool aIsFreeBranch)
+	: MemoryLocation(aMemoryLocation), InstructionSize(aInstructionSize), BranchesTo(aBranchesTo), IsFreeBranch(aIsFreeBranch)
 {
-	_FreeBranches[BranchLocation] = InstructionLength;
 }
 
-bool cFreeBranchReferenceCounter::IsLocationFreeBranch(uint64_t PotentialBranchLocation)
+cAnalysisResult::cAnalysisResult(std::shared_ptr<cProcessInformation> aptrProcess)
+	: ptrProcess(aptrProcess)
 {
-	return _FreeBranches.find(PotentialBranchLocation) != _FreeBranches.end();
 }
 
-std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::GetAllFreeBranches()
+void cAnalysisResult::AddBranches(const tBranchEntries & aBranchCollection)
 {
-	return _FreeBranches;
+	_Branches.insert(aBranchCollection.begin(), aBranchCollection.end());
 }
 
-std::map<uint64_t, uint8_t> cFreeBranchReferenceCounter::_FreeBranches;
+void cAnalysisResult::UpdateBranchMemory(const tBranchMemoryLocationUpdates & aBranchUpdateCollection)
+{
+	for (auto x : aBranchUpdateCollection)
+		_Branches[x.first].MemoryLocation = x.second;
+}
+
+const bool cAnalysisResult::IsMemoryReferenced(uint64_t MemoryAddress) const
+{
+	for (auto x : _Branches)
+		if (x.second.BranchesTo == MemoryAddress)
+			return true;
+
+	return false;
+}
+
+const bool cAnalysisResult::IsBranchInstructionAtMemory(uint64_t MemoryAddress) const
+{
+	for (auto x : _Branches)
+		if (x.second.MemoryLocation == MemoryAddress)
+			return true;
+
+	return false;
+}
+
+const bool cAnalysisResult::IsFreeBranchInstructionAtMemory(uint64_t MemoryAddress) const
+{
+	for (auto x : _Branches)
+		if (x.second.MemoryLocation == MemoryAddress)
+			return x.second.IsFreeBranch;
+
+	return false;
+}
+
+const cBranchEntry cAnalysisResult::GetBranchInstructionAtMemory(uint64_t MemoryAddress) const
+{
+	for (auto x : _Branches)
+		if (x.second.MemoryLocation == MemoryAddress)
+			return x.second;
+
+	throw "No such entry";
+}
+
+const std::vector<uint64_t> cAnalysisResult::GetAllReferencedMemory() const
+{
+	std::vector<uint64_t> Result;
+
+	for (auto x : _Branches)
+		if (x.second.IsFreeBranch == false)
+			Result.push_back(x.second.BranchesTo);
+
+	return Result;
+}
+
+const tBranchEntries cAnalysisResult::GetAllBranches() const
+{
+	return _Branches;
+}
+
+const tBranchEntries cAnalysisResult::GetAllFreeBranches() const
+{
+	tBranchEntries Result;
+
+	for (auto x : _Branches)
+		if (x.second.IsFreeBranch)
+			Result.insert(x);
+
+	return Result;
+}
 

@@ -22,16 +22,6 @@ public:
 
 	static std::vector<std::string> SplitString(std::string str, char Delim = ' ');
 
-	static std::string Base64Encode(const std::string& Data);
-	static std::string Base64Encode(const std::vector<uint8_t>& Data);
-	static std::string Base64Decode(std::string const& s);
-
-	static std::string Implode(std::vector<std::string> Data, std::string Delim = ",");
-	static std::vector<std::string> Explode(std::string Data, std::string Delim = ",");
-
-	static std::string ImplodeDict(std::map<std::string, std::string> Data, std::string Delim = ",");
-	static std::map<std::string, std::string> ExplodeDict(std::string Data, std::string Delim = ",");
-
 	static void WriteFileToDisk(const std::string& Path, const std::vector<uint8_t> Data);
 	static std::vector<uint8_t> ReadFileFromDisk(const std::string& Path);
 

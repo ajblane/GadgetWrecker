@@ -3,11 +3,11 @@
 #include <iostream>
 
 #include "cGenASM.hpp"
-#include "cProcess.hpp"
 #include "cStaticAnalysis.hpp"
 #include "cNasmWrapper.hpp"
 
 #include "../Shared/Utilities/cUtilities.hpp"
+#include "../shared/cProcess/cProcess/cProcess.hpp"
 
 cArgument::cArgument(std::string Data, eArgumentType eType)
 	: ByteData(Data.begin(), Data.end()), ArgumentType(eType)
@@ -292,7 +292,7 @@ void cRemoteLongLookupInteraction::WriteRemoteLookupTable(std::shared_ptr<cProce
 		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess((void*)LookupLocation, LongLookupBytes) == false");
 }
 
-bool cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
+bool cStaticRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
 {
 	bool Result = true;
 
@@ -401,7 +401,7 @@ bool cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(const std::string& N
 	return Result;
 }
 
-bool cRemoteFreeBranchInterdictor::InterdictShortFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
+bool cStaticRemoteFreeBranchInterdictor::InterdictShortFreeBranch(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess, uint64_t RemoteLongLookupTable, uint64_t BranchLocation)
 {
 	bool Result = true;
 
@@ -548,7 +548,7 @@ bool cRemoteFreeBranchInterdictor::InterdictShortFreeBranch(const std::string& N
 	return Result;
 }
 
-bool cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(uint64_t BranchLocation, uint64_t BranchSize)
+bool cStaticRemoteFreeBranchInterdictor::PrepareBranchInterdiction(uint64_t BranchLocation, uint64_t BranchSize)
 {
 	if (BranchSize <= 4)
 		_TargetFreeBranchesSizeFour.push_back(cPreparedRemoteBranchPatches(BranchLocation, BranchSize));		// TODO
@@ -558,7 +558,7 @@ bool cRemoteFreeBranchInterdictor::PrepareBranchInterdiction(uint64_t BranchLoca
 	return true;
 }
 
-void cRemoteFreeBranchInterdictor::MassAddToLookupTable(cDisassembledPage & OriginalPage, cDisassembledPage & NewPage, uint64_t ModifyIndex, uint64_t NewPageStartIndex, uint8_t NumChanges)
+void cStaticRemoteFreeBranchInterdictor::MassAddToLookupTable(cDisassembledPage & OriginalPage, cDisassembledPage & NewPage, uint64_t ModifyIndex, uint64_t NewPageStartIndex, uint8_t NumChanges)
 {
 	if(OriginalPage.GetNumInstructions() <= ModifyIndex + NumChanges)
 		throw cUtilities::FormatExceptionString(__FILE__, "OriginalPage.GetNumInstructions() <= ModifyIndex + NumChanges");
@@ -571,7 +571,7 @@ void cRemoteFreeBranchInterdictor::MassAddToLookupTable(cDisassembledPage & Orig
 	}
 }
 
-void cRemoteFreeBranchInterdictor::AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation)
+void cStaticRemoteFreeBranchInterdictor::AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation)
 {
 	if(_Commited == true)
 		throw cUtilities::FormatExceptionString(__FILE__, "_Commited == true");
@@ -579,7 +579,7 @@ void cRemoteFreeBranchInterdictor::AddToLookupTable(uint64_t OriginalRemoteLocat
 	_LocalLookupTable[OriginalRemoteLocation] = NewRemoteLocation;
 }
 
-void cRemoteFreeBranchInterdictor::Commit(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess)
+void cStaticRemoteFreeBranchInterdictor::Commit(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess)
 {
 	const size_t LookupTableReservedSize = 0x01000000;
 
@@ -617,16 +617,153 @@ void cRemoteFreeBranchInterdictor::Commit(const std::string& NasmPath, std::shar
 	_Commited = true;
 }
 
-std::vector<cPreparedRemoteBranchPatches>	cRemoteFreeBranchInterdictor::_TargetFreeBranchesSizeFive;
-std::vector<cPreparedRemoteBranchPatches>	cRemoteFreeBranchInterdictor::_TargetFreeBranchesSizeFour;
+std::vector<cPreparedRemoteBranchPatches>	cStaticRemoteFreeBranchInterdictor::_TargetFreeBranchesSizeFive;
+std::vector<cPreparedRemoteBranchPatches>	cStaticRemoteFreeBranchInterdictor::_TargetFreeBranchesSizeFour;
 
-std::map<uint64_t, uint64_t>				cRemoteFreeBranchInterdictor::_LocalLookupTable;
+std::map<uint64_t, uint64_t>				cStaticRemoteFreeBranchInterdictor::_LocalLookupTable;
 
-uint64_t cRemoteFreeBranchInterdictor::_RemoteInterdictedLookupTable;
-bool cRemoteFreeBranchInterdictor::_Commited;
+uint64_t cStaticRemoteFreeBranchInterdictor::_RemoteInterdictedLookupTable;
+bool cStaticRemoteFreeBranchInterdictor::_Commited;
 
 cPreparedRemoteBranchPatches::cPreparedRemoteBranchPatches(uint64_t aOriginalBranchLocation, uint64_t aOriginalBranchSize)
 	: BranchLocation(aOriginalBranchLocation), BranchSize(aOriginalBranchSize)
 {
 }
 
+void cRemoteFreeBranchInterdictor::InterdictLargeFreeBranch(cAnalysisResult & Result, const cBranchEntry & aEntry)
+{
+	uint64_t BranchLocation = aEntry.MemoryLocation;
+
+	uint64_t RemoteStubMemory = NULL;
+
+	auto IsInstructionCall = [&](cs_insn* pInstr) -> bool
+	{
+		cs_detail *detail = pInstr->detail;
+
+		for (size_t x = 0; x < detail->groups_count; x++)
+			if (detail->groups[x] == X86_GRP_CALL)
+				return true;
+
+		return false;
+	};
+
+	const size_t StubFunctionReservedSize = 0x60;
+
+	if (_Commited == true)
+		throw cUtilities::FormatExceptionString(__FILE__, "_Commited == true");
+
+	// Create remote free branch interdictor
+	RemoteStubMemory = cRemoteMemoryManager::GetPointer(StubFunctionReservedSize, _ptrProcess);
+	//RemoteStubMemory = pProcess->AllocateMemoryInProcess(StubFunctionReservedSize);
+
+	if (RemoteStubMemory == NULL)
+		throw cUtilities::FormatExceptionString(__FILE__, "RemoteStubMemory == NULL");
+
+	auto PageInformation = cStaticAnalysis::DisassemblePageAroundPointer(_ptrProcess, BranchLocation);
+
+	if (PageInformation.IsInstructionAtAddressAligned(BranchLocation) == false)
+		throw cUtilities::FormatExceptionString(__FILE__, "PageInformation.IsInstructionAtAddressAligned(BranchLocation) == false");
+
+	auto BranchInstruction = PageInformation.GetInstructionAtAddress(BranchLocation);
+
+	bool IsCallType = IsInstructionCall(BranchInstruction);
+
+	size_t ChangeIndex = PageInformation.GetInstructionIdAtAddress(BranchLocation);
+
+	std::string OperandExpression = BranchInstruction->op_str;
+
+	if (OperandExpression == "")
+		return;
+
+	if (OperandExpression.find("esp") != std::string::npos)
+		return;											// TODO: write alternative interdictor that does not use the stack in case of esp based branch instruction
+																		// Such as: jmp dword ptr[esp+0x10f] -> function pointers as arguments to functions without frame pointers or some such bullsh*t
+
+																		// Nasm does not deal with this
+	OperandExpression = cUtilities::ReplaceAll(OperandExpression, "ptr", "");
+
+	std::string InterdictionStubSource = cGenASMHelper::GenerateInterdictionStub((uint64_t)RemoteStubMemory, BranchLocation + BranchInstruction->size, _RemoteLookupTableLocation, OperandExpression, IsCallType);
+
+	// Size is 0x5b for this release.
+	auto InterdictionBytes = cNasmWrapper::AssembleASMSource(_NasmPath, InterdictionStubSource);
+
+	if (InterdictionBytes.size() == 0)
+	{
+		std::cout << "Error source: " << InterdictionStubSource << std::endl;
+
+		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() == 0");
+	}
+
+	if (InterdictionBytes.size() > StubFunctionReservedSize)
+		throw cUtilities::FormatExceptionString(__FILE__, "InterdictionBytes.size() < StubFunctionReservedSize");
+
+	if (_ptrProcess->WriteMemoryInProcess((void*)RemoteStubMemory, InterdictionBytes) == false)
+		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess(RemoteStubMemory, InterdictionBytes) == false");
+
+	//std::cout << "Rewriting branch at: 0x" << std::hex << BranchLocation << std::endl;
+	//std::cout << "Rewriting branch [" << OperandExpression << "] to: 0x" << std::hex << RemoteStubMemory << std::endl;
+	//std::getchar();
+	// Proceed to replace old free branch code with fixed jump to interdictor
+
+	std::vector<uint8_t> ReplacementBuffer;
+	ReplacementBuffer.resize(5 + (BranchInstruction->size - 5));				// TODO: patch me for x64, this is x86 only.
+
+	ReplacementBuffer[0] = 0xe9;
+	*(uint32_t*)&ReplacementBuffer[1] = ((uint32_t)RemoteStubMemory) - ((uint32_t)BranchLocation) - 5;
+
+	for (size_t i = 5; i < ReplacementBuffer.size(); i++)
+		ReplacementBuffer[i] = 0x90;
+
+	if (_ptrProcess->WriteMemoryInProcess((void*)BranchLocation, ReplacementBuffer) == false)
+		throw cUtilities::FormatExceptionString(__FILE__, "pProcess->WriteMemoryInProcess(BranchLocation, ReplacementBuffer) == false");
+
+	AddToLookupTable(BranchLocation, RemoteStubMemory);
+
+	uint64_t DirtyRangeStart = BranchLocation;
+	uint64_t DirtyRangeEnd = BranchLocation + ReplacementBuffer.size();
+
+	cDirtyRangeMarker::AddDirtyRange(DirtyRangeStart, DirtyRangeEnd);
+
+	// All done, lets hope it works.
+}
+
+void cRemoteFreeBranchInterdictor::InterdictShortFreeBranch(cAnalysisResult & Result, const cBranchEntry & aEntry)
+{
+}
+
+cRemoteFreeBranchInterdictor::cRemoteFreeBranchInterdictor(std::shared_ptr<cProcessInformation> pProcess, const std::string & NasmPath)
+	: _ptrProcess(pProcess), _NasmPath(NasmPath)
+{
+}
+
+void cRemoteFreeBranchInterdictor::AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation)
+{
+	if (_Commited == true)
+		throw cUtilities::FormatExceptionString(__FILE__, "_Commited == true");
+
+	_LocalLookupTable[OriginalRemoteLocation] = NewRemoteLocation;
+}
+
+void cRemoteFreeBranchInterdictor::MassInterdict(cAnalysisResult & Result)
+{
+	if (IsCommitted() == true)
+		throw cUtilities::FormatExceptionString(__FILE__, "IsCommitted() == true");
+
+	auto Branches = Result.GetAllFreeBranches();
+
+	for (auto x : Branches)
+		if (x.second.InstructionSize <= 4)
+			InterdictShortFreeBranch(Result, x.second);
+		else
+			InterdictLargeFreeBranch(Result, x.second);
+}
+
+bool cRemoteFreeBranchInterdictor::IsCommitted()
+{
+	return _Commited;
+}
+
+bool cRemoteFreeBranchInterdictor::Commit()
+{
+	_Commited = true;
+}

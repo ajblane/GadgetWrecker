@@ -8,8 +8,9 @@
 #include <mutex>
 
 #include "cNasmWrapper.hpp"
-#include "cProcess.hpp"
 #include "cStaticAnalysis.hpp"
+
+#include "../shared/cProcess/cProcess/cProcess.hpp"
 
 enum eArgumentType
 {
@@ -81,7 +82,7 @@ public:
 	static void WriteRemoteLookupTable(std::shared_ptr<cProcessInformation> pProcess, uint64_t LookupLocation, const std::string& NasmPath, const std::map<uint64_t, uint64_t>& Table);
 };
 
-class cRemoteFreeBranchInterdictor
+class cStaticRemoteFreeBranchInterdictor
 {
 private:
 	static std::vector<cPreparedRemoteBranchPatches>	_TargetFreeBranchesSizeFive;
@@ -100,6 +101,33 @@ public:
 	static void MassAddToLookupTable(cDisassembledPage& OriginalPage, cDisassembledPage& NewPage, uint64_t ModifyIndex, uint64_t NewPageStartIndex, uint8_t NumChanges);
 	static void AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation);
 	static void Commit(const std::string& NasmPath, std::shared_ptr<cProcessInformation> pProcess);
+};
+
+class cRemoteFreeBranchInterdictor
+{
+private:
+	std::shared_ptr<cProcessInformation>			_ptrProcess;
+
+	bool											_Commited;
+
+	std::string										_NasmPath;
+
+	uint64_t										_RemoteLookupTableLocation;
+
+	std::map<uint64_t, uint64_t>					_LocalLookupTable;
+
+	void InterdictLargeFreeBranch(cAnalysisResult& Result, const cBranchEntry& aEntry);
+	void InterdictShortFreeBranch(cAnalysisResult& Result, const cBranchEntry& aEntry);
+
+public:
+	cRemoteFreeBranchInterdictor(std::shared_ptr<cProcessInformation> pProcess, const std::string& NasmPath);
+
+	void AddToLookupTable(uint64_t OriginalRemoteLocation, uint64_t NewRemoteLocation);
+
+	void MassInterdict(cAnalysisResult& Result);
+	
+	bool IsCommitted();
+	bool Commit();
 };
 
 #endif
