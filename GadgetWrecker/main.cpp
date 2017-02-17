@@ -117,10 +117,15 @@ int main(int argc, char** argv)
 
 		auto Context = x.GetThreadContext();
 
+		std::cout << "There's a thread at at: 0x" << std::hex << Context.Eip << std::endl;
+
 		uint64_t TaintedPointer = Context.Eip;
 		// Todo Read the instruction at the pointer to check the actual size instead of hardcoding 8 bytes
-		for(char i = 0; i < 8; i++)
-			cStaticReferenceCounter::AddReference(TaintedPointer, TaintedPointer+i);
+		for (char i = 0; i < 8; i++)
+		{
+			cStaticReferenceCounter::AddReference(TaintedPointer, TaintedPointer + i);
+			cStaticReferenceCounter::AddReference(TaintedPointer, TaintedPointer - i);
+		}
 	}
 
 	//if (pProcessInfo->SuspendProcess() == false)
